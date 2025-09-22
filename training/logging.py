@@ -30,11 +30,11 @@ class BaseLogger:
     def __init__(self, config):
         self.config = config
         self.tracking_uri = "http://127.0.0.1:8080"
-        self.experiment_name = config["experiment_name"]
-        run_name = "_".join([f'{k}_{config[k]}' for k in ["N", 
-                                                         "dataset_size",
-                                                         "random_seed",
-                                                         ]])
+        self.experiment_name = config.logging.experiment_name
+        run_name = "_".join([f'{k}_{config.arg_mapping[k]}' for k in ["N", 
+                                                                      "dataset_size",
+                                                                      "random_seed",
+                                                                      ]])
         self.run_name = run_name
         self.client = mlflow.tracking.MlflowClient()
         mlflow.start_run()
@@ -100,13 +100,13 @@ class TrainingLogger(BaseLogger):
 
         # save plot
         save_path = (f"artifacts/loss_curves/"
-                    f"N{title_dict['N']}/{title.lower().replace(' ', '_')}"
-                    f"_dataset_size_{title_dict['dataset_size']}.png")
+                    f"N{self.config.model.N}/{title.lower().replace(' ', '_')}"
+                    f"_dataset_size_{self.config.dataset.size}.png")
         plt.show()
         plt.pause(0.01)
         fig.savefig(save_path)
         plt.close()
-        mlflow.log_artifacts(f"artifacts/loss_curves/N{self.config['N']}")
+        mlflow.log_artifacts(f"artifacts/loss_curves/N{self.config.model.N}")
 
     def interpolate(self, array, target_length):
         
@@ -129,7 +129,7 @@ class TranslationLogger(BaseLogger):
         self.pred_sentences = []
         self.bleu_scores = []
         # create directories required for saving artifacts
-        DirectoryCreator.add_dir(f"generated_translations/N{self.config['N']}/dataset_size_{self.config['dataset_size']}", 
+        DirectoryCreator.add_dir(f"generated_translations/N{self.config.model.N}/dataset_size_{self.config.dataset.size}", 
                                  include_base_path=True)
 
     def log_sentence_batch(self, src_sentences, tgt_sentences, pred_sentences, bleu_score):

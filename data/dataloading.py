@@ -45,17 +45,17 @@ class Batch:
     
 class RuntimeDataset(Dataset):
     def __init__(self, data, config):
-        self.dataset = data
+        self.data = data
         self.config = config
         self.length = data.shape[0]
         self.device = config.hardware.device
-        self.pad_idx_tgt = config.tokenizer_tgt.pad_token_id
+        self.pad_idx_tgt = config.extras.tokenizer_tgt.pad_token_id
     
     def __getitem__(self, i):
         '''
         Return a tensor corresponding to a single pair of sentences
         '''
-        tok_sentence_pair = self.dataset[i]
+        tok_sentence_pair = self.data[i]
         return tok_sentence_pair
     
     def __len__(self):
@@ -75,27 +75,32 @@ class RuntimeDataset(Dataset):
         return Batch(self.pad_idx_tgt, batch_src, batch_tgt)
     
         
-def load_datasets(config: Config):
+def load_datasets(tokenizer_src, tokenizer_tgt, config: Config):
     '''
     A utility function that sources the preprocessed data, calls a split on 
     it, generates runtime dataset splits for training, validation and testing.
     '''
     print(f'Loading dataset {config.dataset.name}')
-    data_processor = DataProcessor(config.tokenizer_src,
-                                   tokenizer_tgt,
-                                   max_padding,
-                                   language_pair)
-    preprocessed_data = DataSource.get_data(name, 
-                                            language_pair, 
-                                            cache, 
+    data_processor = DataProcessor(tokenizer_src, tokenizer_tgt, config)
+    print("Preprocessing data")
+    
+    # Get part indices from config if they exist
+    part_start_index = getattr(config, 'part_start_index', None)
+    part_end_index = getattr(config, 'part_end_index', None)
+    
+    preprocessed_data = DataSource.get_data(config.dataset.name, 
+                                            config.dataset.language_pair, 
+                                            config.dataset.cache, 
                                             data_processor,
-                                            dataset_size,
-                                            max_padding,
-                                            random_seed)
+                                            config.dataset.size,
+                                            config.model.max_padding,
+                                            config.training.random_seed,
+                                            part_start_index,
+                                            part_end_index)
 
     train_dataset = RuntimeDataset(preprocessed_data['train'], config)
-    val_dataset = RuntimeDataset(preprocessed_data['val'], config.hardware.device, config.tokenizer_tgt.pad_token_id)
-    test_dataset = RuntimeDataset(preprocessed_data['test'], config.hardware.device, config.tokenizer_tgt.pad_token_id)
+    val_dataset = RuntimeDataset(preprocessed_data['val'], config)
+    test_dataset = RuntimeDataset(preprocessed_data['test'], config)
 
     print(f"Number of sentence pairs: \n"
           f"Training: {train_dataset.length}\t"
@@ -105,26 +110,26 @@ def load_datasets(config: Config):
     return train_dataset, val_dataset, test_dataset
 
     
-def load_dataloaders(config: Config):
+def load_dataloaders(tokenizer_src, tokenizer_tgt, config: Config):
     '''
     A utility function that takes runtime dataset splits and creates 
     corresponding train, validation and test dataloaders that consume the 
     dataset splits and batch them at runtime for the model.
     '''
-    train_dataset, val_dataset, test_dataset = load_datasets(config)
+    train_dataset, val_dataset, test_dataset = load_datasets(tokenizer_src, tokenizer_tgt, config)
     train_dataloader = DataLoader(dataset=train_dataset, 
-                                  batch_size=batch_size, 
-                                  shuffle=shuffle,
+                                  batch_size=config.training.batch_size, 
+                                  shuffle=config.training.shuffle,
                                   collate_fn=train_dataset.collate_fn,
-                                #   num_workers=5,
-                                #   persistent_workers=True,
-                                #   pin_memory=True,
-                                #   prefetch_factor=3,
-                                )
+                                  # num_workers=5,
+                                  # persistent_workers=True,
+                                  # pin_memory=True,
+                                  # prefetch_factor=3,
+                                  )
     
     val_dataloader = DataLoader(dataset=val_dataset, 
-                                batch_size=batch_size, 
-                                shuffle=shuffle,
+                                batch_size=config.training.batch_size, 
+                                shuffle=False,
                                 collate_fn=val_dataset.collate_fn,
                                 # num_workers=5,
                                 # persistent_workers=True,
@@ -133,7 +138,13 @@ def load_dataloaders(config: Config):
                                 )
     
     test_dataloader = DataLoader(dataset=test_dataset, 
-                                batch_size=batch_size, 
-                                shuffle=shuffle,
+                                batch_size=config.training.batch_size, 
+                                shuffle=False,
                                 collate_fn=test_dataset.collate_fn)
-    return train_dataloader, val_dataloader, test_dataloader
+    
+    dataloaders = {
+        'train': train_dataloader,
+        'val': val_dataloader,
+        'test': test_dataloader
+    }
+    return dataloaders

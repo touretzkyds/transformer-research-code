@@ -1,6 +1,6 @@
 # Model Architecture
 model:
-  n_layers: 6
+  N: 6
   d_model: 512
   d_ff: 2048
   n_heads: 8
@@ -10,16 +10,17 @@ model:
 # Training Configuration
 training:
   batch_size: 400
+  shuffle: true
   epochs: 20
   learning_rate:
     base: 1.0
     warmup_steps: 3000
   accumulation_steps: 10
   random_seed: 101
-
+  label_smoothing: 0.1
 # Dataset Configurations
 dataset:
-  name: "wmt14"  # Options: wmt14, m30k
+  name: "wmt24"  # Options: wmt14, m30k, wmt24
   language_pair: ["de", "en"]
   size: 5000000  # max dataset size to use # TODO: rename to max_size
   cache: true    # whether to cache preprocessed data
@@ -46,3 +47,10 @@ logging:
 hardware:
   device: "cuda"  # Options: cuda, cpu
   data_parallel: true  # whether to use DataParallel for multi-GPU training
+
+# Translation Configuration
+translation:
+  batch_limit: 1000
+
+extras: # extra config options
+  harvard: false

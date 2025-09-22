@@ -6,7 +6,7 @@ import torch.nn as nn
 import argparse
 from torch.optim.lr_scheduler import LambdaLR
 
-from tokenization.tokenizers import build_tokenizers
+from tokenization.utils import build_tokenizers
 from data.dataloading import load_datasets, load_dataloaders
 
 from training.logging import DirectoryCreator, TrainingLogger
@@ -43,15 +43,17 @@ class Trainer:
         self.tokenizer_src, self.tokenizer_tgt = build_tokenizers(self.config)
         self.config.model.src_vocab_size = len(self.tokenizer_src.vocab)
         self.config.model.tgt_vocab_size = len(self.tokenizer_tgt.vocab)
+        self.config.extras.tokenizer_src = self.tokenizer_src
+        self.config.extras.tokenizer_tgt = self.tokenizer_tgt
 
     def _init_model(self):
         """Initialize the transformer model"""
-        if self.config.harvard:
+        if self.config.extras.harvard:
             from harvard import make_model
             self.model = make_model(
                 self.config.model.src_vocab_size,
                 self.config.model.tgt_vocab_size,
-                self.config.model.n_layers,
+                self.config.model.N,
                 self.config.model.d_model,
                 self.config.model.d_ff,
                 self.config.model.n_heads,
@@ -75,6 +77,8 @@ class Trainer:
         # )
         
         self.train_loader, self.val_loader, self.test_loader = load_dataloaders(
+            self.tokenizer_src,
+            self.tokenizer_tgt,
             self.config
         )
 
@@ -96,7 +100,7 @@ class Trainer:
             lr=self.config.training.learning_rate.base,
             betas=(0.9, 0.98),
             eps=1e-9
-        )
+        ).to(self.device)
 
         # Scheduler
         self.scheduler = LambdaLR(
@@ -106,7 +110,7 @@ class Trainer:
                 self.config.model.d_model,
                 warmup=self.config.training.learning_rate.warmup_steps
             )
-        )
+        ).to(self.device)
 
     def train(self):
         """Main training loop"""
@@ -132,36 +136,36 @@ class Trainer:
             
             # Save model checkpoint
 
-class Trainer:
-    def __init__(self, config: Config):
-        self.config = config
-        self._update_config_from_args()
-        self.logger = TrainingLogger(config)
+# class Trainer:
+#     def __init__(self, config: Config):
+#         self.config = config
+#         self._update_config_from_args()
+#         self.logger = TrainingLogger(config)
 
 
 
-def train(train_dataloader, val_dataloader, model, criterion, 
+def train(dataloaders, model, criterion, 
           optimizer, scheduler, config):
     # initiate logger for saving metrics
     logger = TrainingLogger(config)
     # start training
     # TODO: introduce torch.autocast
-    for epoch in range(1, config["num_epochs"]+1): # epochs are 1-indexed
+    for epoch in range(1, config.training.epochs+1): # epochs are 1-indexed
         save_frequency = 2
         print(f"Epoch: {epoch}")
         # initialize timer
         start = time.time()
         # training
-        train_loss, train_bleu = run_train_epoch(train_dataloader, 
+        train_loss, train_bleu = run_train_epoch(dataloaders['train'], 
                                                  model, 
                                                  criterion, 
                                                  optimizer, 
                                                  scheduler, 
-                                                 config["accum_iter"],
+                                                 config.training.accumulation_steps, 
                                                  logger,
                                                  epoch)
         # validation
-        val_loss, val_bleu = run_val_epoch(val_dataloader, model, criterion)
+        val_loss, val_bleu = run_val_epoch(dataloaders['val'], model, criterion)
 
         # accumulate loss history
         logger.log_metric('val_loss', val_loss, epoch)
@@ -177,13 +181,13 @@ def train(train_dataloader, val_dataloader, model, criterion,
         # save model
         if epoch % save_frequency == 0:
             if HARVARD:
-                save_path = f'{config["model_dir"]}/N{config["N"]}/harvard/{config["dataset_name"]}/dataset_size_{config["dataset_size"]}/epoch_{epoch:02d}.pt'
+                save_path = f'{config.logging.model_dir}/N{config.model.N}/harvard/{config.dataset.name}/dataset_size_{config.dataset.size}/epoch_{epoch:02d}.pt'
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 torch.save(model.state_dict(), save_path)
                 print(f"Model saved to {save_path}")
             else:
                 torch.save(model,
-                           f'{config["model_dir"]}/N{config["N"]}/{config["dataset_name"]}/dataset_size_{config["dataset_size"]}/epoch_{epoch:02d}.pt')
+                           f'{config.logging.model_dir}/N{config.model.N}/{config.dataset.name}/dataset_size_{config.dataset.size}/epoch_{epoch:02d}.pt')
 
         # plot and save loss curves
         # log loss v/s weight updates
@@ -286,16 +290,19 @@ if __name__ == "__main__":
     parser.add_argument("--language_pair", type=tuple, default=("de", "en"))
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--max_padding", type=int, default=20)
-    parser.add_argument("--dataset_name", type=str, choices=["wmt14", "m30k", "txt"], default="wmt14")
+    parser.add_argument("--dataset_name", type=str, choices=["wmt14", "m30k", "txt", "wmt24"], default="wmt14")
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--dataset_size", type=int, default=5000000)
     parser.add_argument("--random_seed", type=int, default=40)
     parser.add_argument("--experiment_name", type=str, default="default experiment")
     parser.add_argument("--HARVARD", action="store_true")
     parser.add_argument("--tokenizer_type", type=str, choices=["spacy", "bert"])
+    
     # parser.add_argument("--run_name", type=str, default="default run")
     args = parser.parse_args()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    config = Config("configs/default.yaml")
+    config.update_from_args(args)
+    config.print()
 
     # if missing, create directories required for saving artifacts
     DirectoryCreator.create_dirs(['saved_tokenizers', 
@@ -312,45 +319,36 @@ if __name__ == "__main__":
         tokenizer_type = "spacy"
     else:
         tokenizer_type = args.tokenizer_type
-    tokenizer_src, tokenizer_tgt = build_tokenizers(args.language_pair, name=tokenizer_type, cache=args.cache)
-    config = create_config(args, len(tokenizer_src.vocab), len(tokenizer_tgt.vocab))
+    tokenizer_src, tokenizer_tgt = build_tokenizers(config)
+    config.model.src_vocab_size = len(tokenizer_src.vocab)
+    config.model.tgt_vocab_size = len(tokenizer_tgt.vocab)
+    config.extras.tokenizer_src = tokenizer_src
+    config.extras.tokenizer_tgt = tokenizer_tgt
 
     if HARVARD:
         from harvard import EncoderDecoder, Encoder, Decoder, MultiHeadedAttention, PositionwiseFeedForward, PositionalEncoding, make_model, Generator, EncoderLayer, DecoderLayer, Sublayer, attention_fn
         from harvard import LayerNorm, Embeddings
-        model = make_model(config["src_vocab_size"], config["tgt_vocab_size"], config["N"], config["d_model"], config["d_ff"], config["h"], config["dropout_prob"]).to(device)
+        model = make_model(config.model.src_vocab_size, config.model.tgt_vocab_size, config.model.N, config.model.d_model, config.model.d_ff, config.model.n_heads, config.model.dropout_prob)
     else:
         # initialize model
-        model = create_model(config).to(device)
+        model = create_model(config)
     print(f"Model: \n{model}")
-    # load data
-    train_dataset, val_dataset, test_dataset = load_datasets(config["dataset_name"],
-                                                             config["language_pair"],
-                                                             tokenizer_src, 
-                                                             tokenizer_tgt,
-                                                             config["max_padding"],
-                                                             device=device,
-                                                             cache=args.cache,
-                                                             random_seed=args.random_seed,
-                                                             dataset_size=args.dataset_size)
 
-    train_dataloader, val_dataloader, test_dataloader = load_dataloaders(train_dataset, 
-                                                                         val_dataset, 
-                                                                         test_dataset,
-                                                                         config["batch_size"],
-                                                                         shuffle=True,
-                                                                         num_workers=os.cpu_count())
+    dataloaders = load_dataloaders(tokenizer_src, tokenizer_tgt, config)  
     # create loss criterion, learning rate optimizer and scheduler
-    label_smoothing = LabelSmoothing(len(tokenizer_tgt.vocab), 
-                                     tokenizer_tgt.pad_token_id, 0.1)
-    label_smoothing = label_smoothing.to(device)
+    label_smoothing = LabelSmoothing(config.model.tgt_vocab_size, 
+                                     tokenizer_tgt.pad_token_id, 
+                                     config.training.label_smoothing)
     criterion = SimpleLossCompute(label_smoothing)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config["base_lr"], 
-                                 betas=(0.9, 0.98), eps=1e-9)
+    optimizer = torch.optim.Adam(model.parameters(), 
+                                 lr=config.training.learning_rate.base, 
+                                 betas=(0.9, 0.98), 
+                                 eps=1e-9)
     scheduler = LambdaLR(optimizer = optimizer, 
                          lr_lambda = lambda step_num: get_learning_rate(
-                            step_num+1, config["d_model"], 
-                            warmup=config["warmup"]))
+                             step_num+1, 
+                             config.model.d_model, 
+                             warmup=config.training.learning_rate.warmup_steps))
     
     # train
-    train(train_dataloader, val_dataloader, model, criterion, optimizer, scheduler, config)
+    train(dataloaders, model, criterion, optimizer, scheduler, config)

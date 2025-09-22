@@ -9,133 +9,56 @@ from collections import defaultdict
 import json
 
 class DataProcessor:
-    def __init__(self, tokenizer_src, tokenizer_tgt,
-                 max_padding, language_pair):
+    def __init__(self, tokenizer_src, tokenizer_tgt, config):
         super().__init__()
-        # TODO: language_pair arg comes first for consistency
         self.tokenizer_src = tokenizer_src
         self.tokenizer_tgt = tokenizer_tgt
-        self.max_padding = max_padding
-        self.language_pair = language_pair
-
-    def plot_token_lengths(self, raw_data):
-        fig, axs = plt.subplots(nrows=len(raw_data.keys()), ncols=len(self.language_pair), 
-                            figsize=(15, 5*len(raw_data.keys())), dpi=500)
-        
-        # Make axs 2D if there's only one language pair
-        if len(self.language_pair) == 1:
-            axs = np.array([axs]).reshape(-1, 1)
-
-        # Load or calculate token lengths
-        if os.path.exists("all_lens.json"):
-            all_lens = json.load(open("all_lens.json", "r"))
-        else:
-            all_lens = defaultdict(lambda: defaultdict(list))
-            for split in tqdm(raw_data.keys(), desc="Calculating token lengths", position=0, leave=True):
-                for j, (language, tokenizer) in enumerate(zip(self.language_pair, [self.tokenizer_src, self.tokenizer_tgt])):
-                    batch_size = 1000000
-                    src_sentences = [src for src, _ in raw_data[split]]
-                    tgt_sentences = [tgt for _, tgt in raw_data[split]]
-                    if j == 0:
-                        sentences = src_sentences
-                    else:
-                        sentences = tgt_sentences
-                    for start_idx in range(0, len(sentences), batch_size):
-                        end_idx = min(start_idx + batch_size, len(sentences))
-                        batch_data = sentences[start_idx:end_idx]
-                        tokenized_data = tokenizer(batch_data)["input_ids"]
-                        all_lens[language][split].extend([len(sent) for sent in tokenized_data])
-            json.dump(all_lens, open("all_lens.json", "w"))
-
-        # Plot the distributions
-        # Calculate global max_len across all splits and languages
-        global_max_len = 0
-        for language in self.language_pair:
-            for split in raw_data.keys():
-                lens = all_lens[language][split]
-                length_threshold = np.percentile(lens, 99.99)
-                filtered_lens = [l for l in lens if l <= length_threshold]
-                split_max_len = int(np.percentile(filtered_lens, 99.99))
-                global_max_len = max(global_max_len, split_max_len)
-        print(f"Global max length: {global_max_len}")
-
-        for i, language in tqdm(enumerate(self.language_pair), desc="Plotting token lengths", position=0, leave=True):
-            for j, split in enumerate(raw_data.keys()):
-                lens = all_lens[language][split]
-                
-                # Remove extreme outliers (beyond 99.99 percentile)
-                length_threshold = np.percentile(lens, 99.99)
-                filtered_lens = [l for l in lens if l <= length_threshold]
-                
-                # Calculate statistics
-                quartiles_of_interest = [25, 50, 75, 90, 95, 99]
-                quartiles = np.percentile(filtered_lens, quartiles_of_interest)
-                mean = np.mean(filtered_lens)
-                
-                # Plot histogram with better binning
-                # max_len = int(np.percentile(filtered_lens, 99.99))
-                bins = np.linspace(0, global_max_len, 50)
-                
-                counts, bins, _ = axs[j, i].hist(filtered_lens, bins=bins, alpha=0.7)
-                axs[j, i].grid(True, alpha=0.3)
-                axs[j, i].set_title(f"{language} - {split} (Total: {len(filtered_lens):,} sentences)")
-                axs[j, i].set_xlabel("Token Length")
-                axs[j, i].set_ylabel("Number of Sentences")
-                
-                # Format y-axis with comma separator
-                axs[j, i].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
-                
-                # Add vertical lines for statistics
-                values = [*quartiles, mean]
-                labels = [f'{q}th percentile' for q in quartiles_of_interest] + ['Mean']
-                colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'black']
-                
-                # Sort by value while keeping labels aligned
-                sorted_indices = np.argsort(values)
-                sorted_values = np.array(values)[sorted_indices]
-                sorted_labels = np.array(labels)[sorted_indices]
-                sorted_colors = np.array(colors)[sorted_indices]
-                
-                for label, value, color in zip(sorted_labels, sorted_values, sorted_colors):
-                    axs[j, i].axvline(value, linestyle='--', label=f'{label}: {int(value)}', color=color)
-                
-                axs[j, i].legend(fontsize='small')
-                print(f"\n{language} - {split}:")
-                print(f"Total sentences: {len(filtered_lens):,}")
-                print(f"Filtered out: {len(lens) - len(filtered_lens):,} sentences beyond {int(length_threshold)} tokens")
-
-        plt.tight_layout()
-        plt.suptitle(f"Token count statistics for '{self.language_pair}' language pair", fontsize=16, y=1.05, fontweight='bold')
-        plt.savefig(f"artifacts/token_lengths_{'-'.join(self.language_pair)}.png")
-        import pdb; pdb.set_trace()
-
+        self.max_padding = config.model.max_padding
+        self.language_pair = config.dataset.language_pair
+    
     def preprocess_data(self, raw_data):
         '''
         Preprocess raw data sentence by sentence and save to disk.
         Returns: Dict of torch tensors for each split
         '''
+        # self.plot_token_lengths(raw_data)
         preprocessed_dataset = {}
-        for split in tqdm(raw_data.keys(), desc="Preprocessing dataset", position=0, leave=True):
-            # Process in smaller batches to manage memory
-            batch_size = 10000
-            src_sentences = [src for src, tgt in raw_data[split]]
-            tgt_sentences = [tgt for src, tgt in raw_data[split]]
+        BATCH_SIZE = 1000  # Adjust this based on your available memory
             
-            tokenized_src_list = []
-            tokenized_tgt_list = []
-
+        for split in tqdm(raw_data.keys(), desc="Preprocessing dataset"):
+            src_sentences = [src for src, _ in raw_data[split]]
+            tgt_sentences = [tgt for _, tgt in raw_data[split]]
+            
+            # Initialize empty tensors for this split
+            all_src_tokens = []
+            all_tgt_tokens = []
+            
             # Process in batches
-            for i in tqdm(range(0, len(src_sentences), batch_size), desc=f"Tokenizing {split}", position=1, leave=False):
-                batch_src = src_sentences[i:i + batch_size]
-                batch_tgt = tgt_sentences[i:i + batch_size]
-                tokenized_src = self.tokenizer_src(batch_src, padding=True, truncation=True, max_length=self.max_padding)["input_ids"]
-                tokenized_tgt = self.tokenizer_tgt(batch_tgt, padding=True, truncation=True, max_length=self.max_padding)["input_ids"]
-                tokenized_src_list.extend(tokenized_src)
-                tokenized_tgt_list.extend(tokenized_tgt)
-            # Convert to tensors
-            tokenized_src = torch.tensor(tokenized_src_list)
-            tokenized_tgt = torch.tensor(tokenized_tgt_list)
-            preprocessed_dataset[split] = torch.stack([tokenized_src, tokenized_tgt], dim=1)
+            for i in tqdm(range(0, len(src_sentences), BATCH_SIZE), desc=f"Processing {split}", leave=False):
+                src_batch = src_sentences[i:i + BATCH_SIZE]
+                tgt_batch = tgt_sentences[i:i + BATCH_SIZE]
+                
+                tokenized_src = src_batch.map(self.tokenizer_src, batched=True)
+                
+                tokenized_tgt = self.tokenizer_tgt(
+                    tgt_batch,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_padding,
+                    return_tensors="pt",
+                )["input_ids"]
+                
+                all_src_tokens.append(tokenized_src)
+                all_tgt_tokens.append(tokenized_tgt)
+            
+            # Concatenate all batches
+            src_tokens = torch.cat(all_src_tokens, dim=0)
+            tgt_tokens = torch.cat(all_tgt_tokens, dim=0)
+            preprocessed_dataset[split] = torch.stack([src_tokens, tgt_tokens], dim=1)
+            
+            # Optional: Clear memory
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            
         return preprocessed_dataset
     
     @staticmethod
@@ -160,21 +83,41 @@ class DataProcessor:
         return train_data, val_data, test_data
 
     @staticmethod
-    def limit_train_size(data, dataset_size, max_padding):
+    def limit_train_size(data, dataset_size, max_padding, part_start_index=None, part_end_index=None):
         """
-        Limit the size of the training dataset and the max padding length
+        Limit the size of the training dataset and the max padding length.
+        Optionally load a specific part of the dataset based on start/end indices.
+        
         Args:
             data: Dict of torch tensors for each split
             dataset_size: Int, maximum size of the training dataset
             max_padding: Int, maximum padding length
+            part_start_index: Optional start index for loading a specific part
+            part_end_index: Optional end index for loading a specific part
         Returns:
             data: Dict of torch tensors for each split, with limited size and max padding
         """
-        import pdb; pdb.set_trace()
         original_dataset_size, _, original_max_padding = data['train'].shape
-        # limit train size to dataset_size
-        dataset_size = min(dataset_size, original_dataset_size)
+        
+        # Handle part-specific loading
+        if part_start_index is not None and part_end_index is not None:
+            # Validate indices
+            if part_start_index < 0 or part_end_index > original_dataset_size:
+                raise ValueError(f"Part indices {part_start_index} to {part_end_index} out of range for dataset size {original_dataset_size}")
+            if part_start_index >= part_end_index:
+                raise ValueError(f"Invalid part range: start {part_start_index} >= end {part_end_index}")
+            
+            # Load the specific part
+            data['train'] = data['train'][part_start_index:part_end_index, :, :]
+            print(f"Loaded part of dataset: indices {part_start_index:,} to {part_end_index:,} (size: {part_end_index - part_start_index:,})")
+        else:
+            # Original behavior: limit train size to dataset_size
+            dataset_size = min(dataset_size, original_dataset_size)
+            data['train'] = data['train'][:dataset_size, :, :]
+            print(f"Limited dataset to first {dataset_size:,} samples")
+        
         # limit training data to max_padding tokens
         max_padding = min(max_padding, original_max_padding)
-        data['train'] = data['train'][:dataset_size, :, :max_padding]
+        data['train'] = data['train'][:, :, :max_padding]
+        
         return data

@@ -4,7 +4,7 @@ import numpy as np
 from torchtext.data.metrics import bleu_score
 from tqdm import tqdm
 
-def greedy_decode(model, batch, tokenizer_tgt, HARVARD):
+def greedy_decode(model, batch, tokenizer_tgt):
     """
     Decodes the output from the model output probabilities using a basic
     argmax function across the output.
@@ -19,18 +19,9 @@ def greedy_decode(model, batch, tokenizer_tgt, HARVARD):
     pbar = tqdm(range(max_padding - 1), leave=False, desc="Decoding")
     for _ in pbar:
         decoder_attn_mask = batch.make_decoder_attn_mask(predictions_with_bos, pad_id)
-        if HARVARD:
-            src_mask = batch.src_mask.to(batch.src.device)
-            predictions_with_bos = predictions_with_bos.to(batch.src.device)
-            decoder_attn_mask = decoder_attn_mask.to(batch.src.device)
-            output_logprobabilities = model(batch.src, 
-                                            predictions_with_bos, 
-                                            src_mask,
-                                            decoder_attn_mask)
-        else:
-            output_logprobabilities = model(batch.src, 
-                                            predictions_with_bos.to(batch.src.device), 
-                                            decoder_attn_mask.to(batch.src.device))
+        output_logprobabilities = model(batch.src, 
+                                        predictions_with_bos.to(batch.src.device), 
+                                        decoder_attn_mask.to(batch.src.device))
         predictions = torch.argmax(output_logprobabilities, dim=2).detach().cpu()
         predictions_with_bos = torch.cat([bos_tensor, predictions], dim=1)
     return predictions_with_bos
@@ -74,14 +65,13 @@ class BleuUtils:
     # TODO: better name for this class's methods or consolidate into 1/2 methods or move into translator class 
     # which does seem to have similar already
     @staticmethod
-    def evaluate_bleu_random_batches(model, dataloader, tokenizer_tgt, HARVARD, num_batches=5, seed=42):
+    def evaluate_bleu_random_batches(model, dataloader, tokenizer_tgt, num_batches=5, seed=42):
         """
         Evaluates the BLEU score of the model on a random sample of batches from the dataloader.
         args:
             model: the model to evaluate
             dataloader: the dataloader to evaluate on
             tokenizer_tgt: the tokenizer for the target language
-            HARVARD: whether the model is HARVARD or not
             num_batches: the number of batches to evaluate on
             seed: the seed for the random number generator
         returns:
@@ -97,20 +87,20 @@ class BleuUtils:
             bleu_scores = []
             pbar = tqdm(random_batches, leave=False, desc=f"Evaluating BLEU on {num_batches} random batches")
             for batch in pbar:
-                bleu = BleuUtils.evaluate_bleu_one_batch(model, batch, tokenizer_tgt, HARVARD)
+                bleu = BleuUtils.evaluate_bleu_one_batch(model, batch, tokenizer_tgt)
                 bleu_scores.append(bleu)
                 del batch
             average_bleu = sum(bleu_scores) / len(bleu_scores)
             return average_bleu
 
     @staticmethod
-    def evaluate_bleu_one_batch(model, batch, tokenizer_tgt, HARVARD):
+    def evaluate_bleu_one_batch(model, batch, tokenizer_tgt):
         """
         Evaluates the BLEU score of the model on one batch.
         """
         model.eval()
         with torch.no_grad():
-            predictions = greedy_decode(model, batch, tokenizer_tgt, HARVARD)
+            predictions = greedy_decode(model, batch, tokenizer_tgt)
             # src_sentences = tokenizer_src.batch_decode(batch.src, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             tgt_sentences = tokenizer_tgt.batch_decode(batch.tgt_label, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             predicted_sentences = tokenizer_tgt.batch_decode(predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True)

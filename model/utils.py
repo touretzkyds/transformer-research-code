@@ -6,7 +6,7 @@ from model.full_model import TransformerModel
 def create_model(config):
     model =  TransformerModel(config.model.src_vocab_size, 
                               config.model.tgt_vocab_size, 
-                              config.model.n_layers, 
+                              config.model.N, 
                               config.model.d_model, 
                               config.model.d_ff, 
                               config.model.n_heads, 
