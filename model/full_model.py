@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.nn as nn
+from huggingface_hub import PyTorchModelHubMixin
 
-class TransformerModel(nn.Module):
+class TransformerModel(nn.Module, PyTorchModelHubMixin):
     def __init__(self, src_vocab_size, tgt_vocab_size, N=6, d_model=512, d_ff=2048,
                  h=8, dropout_prob=0.1):
         '''
@@ -340,9 +341,7 @@ class MultiHeadedAttentionModule(nn.Module):
             attention_outputs.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
         # pass through final linear layer
         result = self.linear_layer(concatenated_attention_outputs)
-
         del query, key, value, derived_queries, derived_keys, derived_values
-        
         return result
     
     def attention_fn(self, derived_queries, derived_keys, derived_values, 
