@@ -1,5 +1,16 @@
 import os
+import sys
 import json
+import argparse
+from pathlib import Path
+
+# This file is named data.py, which shadows the project's data/ package.
+# Remove the script's own directory from sys.path and add the project root instead.
+_script_dir = str(Path(__file__).resolve().parent)
+_project_root = str(Path(__file__).resolve().parents[2])
+sys.path = [p for p in sys.path if os.path.abspath(p) != _script_dir]
+sys.path.insert(0, _project_root)
+
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -19,28 +30,10 @@ class DataVisualizer:
         self.tokenizer_src = AutoTokenizer.from_pretrained(tokenizer_map[self.language_pair[0]], use_fast=True)
         self.tokenizer_tgt = AutoTokenizer.from_pretrained(tokenizer_map[self.language_pair[1]], use_fast=True)
     
-    def _convert_wmt24_format(self, dataset_dict):
-        """Convert wmt24 DatasetDict format to expected format"""
-        splits = {}
-        for key in dataset_dict.keys():
-            if "." in key:
-                split, lang = key.split(".")
-                if split not in splits:
-                    splits[split] = {}
-                splits[split][lang] = dataset_dict[key]['text']
-        
-        # Convert to list of (src, tgt) tuples
-        result = {}
-        for split, langs in splits.items():
-            src_lang = self.language_pair[0]
-            tgt_lang = self.language_pair[1]
-            if src_lang in langs and tgt_lang in langs:
-                result[split] = list(zip(langs[src_lang], langs[tgt_lang]))
-        return result
-        
     def analyze_token_lengths(self, raw_data):
         """Analyze token lengths using fast tokenizer"""
-        cache_file = "all_lens.json"
+        cache_file = os.path.join("artifacts", f"all_lens_{self.config.dataset.name}.json")
+        os.makedirs("artifacts", exist_ok=True)
         if os.path.exists(cache_file):
             with open(cache_file, "r") as f:
                 return json.load(f)
@@ -49,26 +42,33 @@ class DataVisualizer:
         BATCH_SIZE = 100000
         
         for split in tqdm(raw_data.keys(), desc="Calculating token lengths"):
-            src_sentences = [src for src, _ in raw_data[split]]
-            tgt_sentences = [tgt for _, tgt in raw_data[split]]
-            
-            for lang_idx, (language, tokenizer) in enumerate(zip(self.language_pair, [self.tokenizer_src, self.tokenizer_tgt])):
-                sentences = src_sentences if lang_idx == 0 else tgt_sentences
-                
-                for i in tqdm(range(0, len(sentences), BATCH_SIZE), desc=f"Processing {language}", leave=False):
-                    batch = sentences[i:i + BATCH_SIZE]
-                    tokenized_batch = tokenizer(batch, padding=False, truncation=False)["input_ids"]
-                    batch_lengths = [len(sent) for sent in tokenized_batch]
-                    all_lens[language][split].extend(batch_lengths)
+            data = raw_data[split]
+            if hasattr(data, "map") and hasattr(data, "__len__") and len(data) > 0 and isinstance(data[0], dict) and "translation" in data[0]:
+                src_lang, tgt_lang = self.language_pair[0], self.language_pair[1]
+                for lang_idx, (language, tokenizer) in enumerate(zip(self.language_pair, [self.tokenizer_src, self.tokenizer_tgt])):
+                    lang_key = src_lang if lang_idx == 0 else tgt_lang
+                    for i in tqdm(range(0, len(data), BATCH_SIZE), desc=f"{language} {split}", leave=False):
+                        batch = data.select(range(i, min(i + BATCH_SIZE, len(data))))
+                        sentences = [batch[j]["translation"][lang_key] for j in range(len(batch))]
+                        tokenized_batch = tokenizer(sentences, padding=False, truncation=False)["input_ids"]
+                        batch_lengths = [len(sent) for sent in tokenized_batch]
+                        all_lens[language][split].extend(batch_lengths)
+            else:
+                src_sentences = [src for src, _ in data]
+                tgt_sentences = [tgt for _, tgt in data]
+                for lang_idx, (language, tokenizer) in enumerate(zip(self.language_pair, [self.tokenizer_src, self.tokenizer_tgt])):
+                    sentences = src_sentences if lang_idx == 0 else tgt_sentences
+                    for i in tqdm(range(0, len(sentences), BATCH_SIZE), desc=f"Processing {language}", leave=False):
+                        batch = sentences[i:i + BATCH_SIZE]
+                        tokenized_batch = tokenizer(batch, padding=False, truncation=False)["input_ids"]
+                        batch_lengths = [len(sent) for sent in tokenized_batch]
+                        all_lens[language][split].extend(batch_lengths)
         
         json.dump(all_lens, open(cache_file, "w"), indent=4)
         return all_lens
 
     def plot_token_lengths(self, raw_data):
-        # Convert wmt24 format if needed
-        if isinstance(raw_data, dict) and any("." in k for k in raw_data.keys()):
-            raw_data = self._convert_wmt24_format(raw_data)
-        
+        """raw_data: DatasetDict from DataSource.get_data() (train/validation/test with 'translation' column)."""
         fig, axs = plt.subplots(nrows=len(raw_data.keys()), ncols=len(self.language_pair), 
                             figsize=(15, 5*len(raw_data.keys())), dpi=500)
         
@@ -124,16 +124,21 @@ class DataVisualizer:
 
         plt.tight_layout()
         plt.suptitle(f"Token count statistics for '{self.language_pair}' language pair", fontsize=16, y=1.05, fontweight='bold')
-        plt.savefig(f"artifacts/token_lengths_{'-'.join(self.language_pair)}.png")
+        out_path = os.path.join("artifacts", f"token_lengths_{'-'.join(self.language_pair)}_{self.config.dataset.name}.png")
+        os.makedirs("artifacts", exist_ok=True)
+        plt.savefig(out_path)
+        print(f"Saved plot to {out_path}")
 
 if __name__ == "__main__":
-    config = Config("configs/default.yaml")
+    parser = argparse.ArgumentParser(description="Plot token length distributions for a dataset.")
+    parser.add_argument("--dataset", type=str, default=None, choices=["wmt14", "wmt24"],
+                        help="Dataset name (overrides config). Default: use configs/default.yaml")
+    parser.add_argument("--config", type=str, default="configs/default.yaml", help="Config file path")
+    args = parser.parse_args()
+    config = Config(args.config)
+    if args.dataset is not None:
+        config.dataset.name = args.dataset
+    data_source = DataSource(config)
+    raw_data = data_source.get_data()
     data_visualizer = DataVisualizer(config)
-    raw_data = DataSource.get_data(
-        config.dataset.name, 
-        config.dataset.language_pair, 
-        config.dataset.cache, 
-        None, 
-        config.dataset.size,
-    )
     data_visualizer.plot_token_lengths(raw_data)
