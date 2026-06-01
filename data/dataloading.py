@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from utils.config import Config
 from dotted_dict import DottedDict
 import random
+import numpy as np
 # from data.preprocess import DataProcessor
 # from datasets import DatasetDict
 # from data.hf_dataset_processor import process_hf_dataset, collate_batch
@@ -115,7 +116,9 @@ class DataManager:
         data_source = DataSource(self.config)
         dataset_dict = data_source.get_data()
         random.seed(self.config.training.random_seed)
-        train_dataloader = DataLoader(dataset_dict['train'], batch_size=self.config.training.batch_size, shuffle=self.config.training.shuffle, collate_fn=self.train_collate_fn)
+        shuffle_generator = torch.Generator()
+        shuffle_generator.manual_seed(self.config.training.random_seed)
+        train_dataloader = DataLoader(dataset_dict['train'], batch_size=self.config.training.batch_size, shuffle=self.config.training.shuffle, collate_fn=self.train_collate_fn, generator=shuffle_generator)
         train_toy_dataloader = DataLoader(dataset_dict['train'].select(random.sample(range(len(dataset_dict['train'])), 5000)), batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.train_collate_fn)
         val_dataloader = DataLoader(dataset_dict['validation'], batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.train_collate_fn)
         test_dataloader = DataLoader(dataset_dict['test'], batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.train_collate_fn)

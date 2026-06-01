@@ -1,11 +1,28 @@
 import os
 import time
 import json
+import random
+import numpy as np
 import torch
 import torch.nn as nn
 import argparse
+from multiprocessing import set_start_method
 from torch.optim.lr_scheduler import LambdaLR
+try:
+    set_start_method('spawn')
+except RuntimeError:
+    pass
 
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+# import project modules
 from tokenization.utils import build_tokenizers
 from data.dataloading import DataManager
 from training.logging import TrainingLogger
@@ -14,11 +31,6 @@ from training.utils import get_learning_rate
 from inference.utils import BleuUtils
 from model.utils import count_params, create_model, create_config
 from utils.config import Config
-from multiprocessing import set_start_method
-try:
-    set_start_method('spawn')
-except RuntimeError:
-    pass
 
 class Trainer:
     def __init__(self, config):
@@ -45,6 +57,7 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.config.training.epochs+1): # epochs are 1-indexed
+            import pdb; pdb.set_trace()
             print(f"Epoch: {epoch}")
             # initialize timer
             start = time.time()
@@ -53,18 +66,18 @@ class Trainer:
             # validation
             val_loss, val_bleu = self.run_val_epoch(epoch)
             # testing
-            test_loss, test_bleu = self.run_test_epoch(epoch)
+            # test_loss, test_bleu = self.run_test_epoch(epoch)
             # accumulate loss history
             self.logger.log_metric('val_loss', val_loss, epoch)
             self.logger.log_metric('val_bleu', val_bleu, epoch)
-            self.logger.log_metric('test_loss', test_loss, epoch)
-            self.logger.log_metric('test_bleu', test_bleu, epoch)
+            # self.logger.log_metric('test_loss', test_loss, epoch)
+            # self.logger.log_metric('test_bleu', test_bleu, epoch)
 
             # print losses
             print(f"Epoch: {epoch} | "
                   f"Training: Loss: {train_loss:.3f}, BLEU: {train_bleu:.9f} | "
                   f"Validation: Loss: {val_loss:.3f}, BLEU: {val_bleu:.9f} | "
-                  f"Testing: Loss: {test_loss:.3f}, BLEU: {test_bleu:.9f} | "
+                #   f"Testing: Loss: {test_loss:.3f}, BLEU: {test_bleu:.9f} | "
                   f"Time taken: {1/60*(time.time() - start):.2f} min")
             print("="*100)
 
@@ -75,13 +88,13 @@ class Trainer:
             # plot and save loss curves
             # log loss v/s weight updates
             self.logger.saveplot(epoch, 
-                            metric_names=['train_loss', 'val_loss', 'test_loss'], 
+                            metric_names=['train_loss', 'val_loss'], # 'test_loss'
                             title='Loss', 
                             plot_type='loss', 
                             xlabel='Weight Updates',
                             )
             self.logger.saveplot(epoch,
-                            metric_names=['train_bleu', 'val_bleu', 'test_bleu'], 
+                            metric_names=['train_bleu', 'val_bleu'], # 'test_bleu'
                             title='BLEU', 
                             plot_type='bleu', 
                             xlabel='Weight Updates',
@@ -200,6 +213,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config.update_from_args(args)
     config.print()
+
+    set_seed(config.training.random_seed)
     
     # load tokenizers and vocabulary
     tokenizer_type = args.tokenizer_type

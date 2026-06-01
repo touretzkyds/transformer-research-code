@@ -99,7 +99,7 @@ class TrainingLogger(BaseLogger):
         ax.legend()
 
         # save plot
-        fig.savefig(os.path.join(self.loss_save_dir, f"{title.lower().replace(' ', '_')}_{plot_type}.png"))
+        fig.savefig(os.path.join(self.loss_save_dir, f"{title.lower().replace(' ', '_')}_{plot_type}.svg"), format='svg')
         plt.close()
 
     def interpolate(self, array, target_length):

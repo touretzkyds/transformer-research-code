@@ -18,7 +18,7 @@ training:
     base: 1.0
     warmup_steps: 3000
   accumulation_steps: 10
-  random_seed: 42
+  random_seed: 42 # TODO: rename to seed
   label_smoothing: 0.1
 # Dataset Configurations
 dataset:
