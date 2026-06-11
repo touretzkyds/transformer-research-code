@@ -1,5 +1,4 @@
 import os
-import spacy
 import torch
 import os.path as op
 from transformers import AutoTokenizer

@@ -153,7 +153,7 @@ def make_plot(
 
 def process_experiment(raw_dir: Path, rel_path: str, dry_run: bool = False):
     """Regenerate bleu and loss plots for one experiment."""
-    out_base = OUTPUT_ROOT / rel_path / "loss"
+    out_base = OUTPUT_ROOT / rel_path
 
     plots = [
         ("bleu", ["train_bleu", "val_bleu"], "bleu.svg"),

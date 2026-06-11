@@ -11,8 +11,8 @@ import matplotlib.image as mpimg
 # sizes = ["30K", "100K", "300K", "1M", "3M", "5M"]
 sizes = ["100K", "300K", "5M"]
 DEFAULT_PATHS = [
-    [f"artifacts/loss_curves/N_1/name_wmt24/size_{size}/bs_128/seed_42/seq_50/loss/loss_loss.png" for size in sizes],
-    [f"artifacts/loss_curves/N_6/name_wmt24/size_{size}/bs_128/seed_42/seq_50/loss/loss_loss.png" for size in sizes],
+    [f"artifacts/loss_curves/N_1/name_wmt24/size_{size}/bs_128/seed_42/seq_50/loss.png" for size in sizes],
+    [f"artifacts/loss_curves/N_6/name_wmt24/size_{size}/bs_128/seed_42/seq_50/loss.png" for size in sizes],
 ]
 DEFAULT_OUTPUT_DIR = "artifacts"
 DEFAULT_OUTPUT_STEM = "grid"

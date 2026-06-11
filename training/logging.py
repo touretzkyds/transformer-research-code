@@ -33,12 +33,12 @@ class TrainingLogger(BaseLogger):
         super().__init__(config)
         self.metrics = defaultdict(list)
         common_save_path = os.path.join(*[f"{k}_{str(v)}" for k, v in self.title_dict.items()])
-        self.loss_save_dir = os.path.join(config.logging.artifacts_dir, "loss_curves", common_save_path, "loss")
-        self.bleu_save_dir = os.path.join(config.logging.artifacts_dir, "loss_curves", common_save_path, "bleu")
-        self.raw_values_save_dir = os.path.join(config.logging.artifacts_dir, "loss_curves", common_save_path, "raw_values")
+        self.experiment_save_dir = os.path.join(config.logging.artifacts_dir, "loss_curves", common_save_path)
+        self.raw_values_save_dir = os.path.join(self.experiment_save_dir, "raw_values")
         self.model_save_dir = os.path.join(config.logging.artifacts_dir, "saved_models", common_save_path)
         self.translation_save_dir = os.path.join(config.logging.artifacts_dir, "generated_translations", common_save_path)
-        self.create_dirs([self.loss_save_dir, self.bleu_save_dir, self.raw_values_save_dir, self.model_save_dir, self.translation_save_dir])
+        os.makedirs(self.experiment_save_dir, exist_ok=True)
+        self.create_dirs([self.raw_values_save_dir, self.model_save_dir, self.translation_save_dir])
 
     def log_metric(self, name, value, step):
         '''
@@ -99,7 +99,8 @@ class TrainingLogger(BaseLogger):
         ax.legend()
 
         # save plot
-        fig.savefig(os.path.join(self.loss_save_dir, f"{title.lower().replace(' ', '_')}_{plot_type}.svg"), format='svg')
+        os.makedirs(self.experiment_save_dir, exist_ok=True)
+        fig.savefig(os.path.join(self.experiment_save_dir, f"{plot_type}.svg"), format='svg')
         plt.close()
 
     def interpolate(self, array, target_length):
