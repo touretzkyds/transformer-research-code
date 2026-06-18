@@ -3,7 +3,7 @@
 
 torch==1.11.0+cu113
 torchdata==0.3.0
-torchtext==0.12
+torchmetrics
 altair==4.1
 jupytext==1.13
 flake8

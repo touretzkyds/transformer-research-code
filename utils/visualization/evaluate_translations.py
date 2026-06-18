@@ -123,6 +123,22 @@ def load_sampled_file(file_path: str, delimiter: str = ' | ') -> Tuple[List[str]
     return de_texts, en_texts
 
 
+def load_existing_translations(file_path: str) -> Tuple[List[str], List[str], List[str]]:
+    """Load DE, EN reference, and EN translation from a saved translations file."""
+    de_texts, en_refs, en_trans = [], [], []
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.startswith('DE: '):
+                de_texts.append(line[4:].rstrip('\n'))
+            elif line.startswith('EN_REF: '):
+                en_refs.append(line[8:].rstrip('\n'))
+            elif line.startswith('EN_TRANS: '):
+                en_trans.append(line[10:].rstrip('\n'))
+
+    return de_texts, en_refs, en_trans
+
+
 def compute_bleu(references: List[str], hypotheses: List[str]) -> float:
     """Compute BLEU score between references and hypotheses."""
     assert len(references) == len(hypotheses)
@@ -166,6 +182,7 @@ def main():
     parser.add_argument('--delimiter', type=str, default=' | ', help='Delimiter used in sampled files.')
     parser.add_argument('--save-translations', action='store_true', help='Save individual translation files per subpart.')
     parser.add_argument('--translations-dir', type=str, default=None, help='Directory to save translation files. Defaults to {samples_dir}/translations/')
+    parser.add_argument('--skip-existing', action='store_true', help='Reuse existing per-subpart translation files when present (requires --save-translations).')
 
     args = parser.parse_args()
 
@@ -200,6 +217,8 @@ def main():
     
     if args.save_translations:
         os.makedirs(translations_dir, exist_ok=True)
+    elif args.skip_existing:
+        raise ValueError("--skip-existing requires --save-translations")
 
     results = {}
     total_translated = 0
@@ -207,26 +226,40 @@ def main():
     # Process each subpart
     for dataset_name, file_path in sample_files.items():
         print(f"\nProcessing {dataset_name}...")
-        
-        # Load German and English texts
-        de_texts, en_texts = load_sampled_file(file_path, args.delimiter)
-        if not de_texts:
-            print(f"  Warning: No texts loaded from {file_path}")
-            continue
+        trans_file_path = os.path.join(translations_dir, f"{dataset_name}_translations.txt")
 
-        print(f"  Loaded {len(de_texts)} sentence pairs")
+        reused_existing = False
+        if args.skip_existing and os.path.exists(trans_file_path):
+            de_texts, en_texts, translated_texts = load_existing_translations(trans_file_path)
+            if de_texts and len(de_texts) == len(en_texts) == len(translated_texts):
+                print(f"  Reusing {len(translated_texts)} existing translations from {trans_file_path}")
+                reused_existing = True
+            else:
+                print(f"  Warning: Incomplete translation file at {trans_file_path}; retranslating")
 
-        # Translate German to English in batches
-        translated_texts = []
-        pbar = tqdm(range(0, len(de_texts), args.batch_size), desc="Translating batch")
-        for i in pbar:
-            batch = de_texts[i:i + args.batch_size]
-            batch_translations = translator.translate_batch(batch)
-            translated_texts.extend(batch_translations)
-        
+        if not reused_existing:
+            # Load German and English texts
+            de_texts, en_texts = load_sampled_file(file_path, args.delimiter)
+            if not de_texts:
+                print(f"  Warning: No texts loaded from {file_path}")
+                continue
+
+            print(f"  Loaded {len(de_texts)} sentence pairs")
+
+            # Translate German to English in batches
+            translated_texts = []
+            pbar = tqdm(range(0, len(de_texts), args.batch_size), desc="Translating batch")
+            for i in pbar:
+                batch = de_texts[i:i + args.batch_size]
+                batch_translations = translator.translate_batch(batch)
+                translated_texts.extend(batch_translations)
+        else:
+            pbar = None
+
         # Compute BLEU score
         bleu_score = compute_bleu(en_texts, translated_texts)
-        pbar.set_description(f"{dataset_name}: BLEU {bleu_score:.2f}")
+        if pbar is not None:
+            pbar.set_description(f"{dataset_name}: BLEU {bleu_score:.2f}")
         print(f"  BLEU score: {bleu_score:.2f}")
         # Store results
         results[dataset_name] = {
@@ -236,11 +269,9 @@ def main():
         }
 
         total_translated += len(en_texts)
-        print(f"  BLEU score: {bleu_score:.2f}")
 
         # Save individual translation file if requested
-        if args.save_translations:
-            trans_file_path = os.path.join(translations_dir, f"{dataset_name}_translations.txt")
+        if args.save_translations and not reused_existing:
             with open(trans_file_path, 'w', encoding='utf-8') as f:
                 for de, en_ref, en_trans in zip(de_texts, en_texts, translated_texts):
                     f.write(f"DE: {de}\n")

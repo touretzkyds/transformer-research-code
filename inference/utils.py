@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 import gc
-from torchtext.data.metrics import bleu_score
+from torchmetrics.functional.text.bleu import bleu_score
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
@@ -184,11 +184,7 @@ class BleuUtils:
                 torch.cuda.empty_cache()
             return bleu
 
-    def compute_batch_bleu(self, predicted_sentences, actual_sentences):
-        # convert tokens to sentences
-        # convert to lists of words format required by bleu function
-        predicted_sentences_list = [sentence.split() for sentence in predicted_sentences]
-        actual_sentences_list = [[sentence.split()] for sentence in actual_sentences]        
-        # compute bleu
-        bleu = bleu_score(predicted_sentences_list, actual_sentences_list)
-        return bleu
+    @staticmethod
+    def compute_batch_bleu(predicted_sentences, actual_sentences):
+        references = [[sentence] for sentence in actual_sentences]
+        return float(bleu_score(predicted_sentences, references))
