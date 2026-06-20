@@ -24,11 +24,10 @@ training:
 dataset:
   name: "wmt24"  # Options: wmt14, m30k, wmt24
   language_pair: ["de", "en"]
-  size: 5000000  # max dataset size to use # TODO: rename to max_size
+  size: 10000  # max dataset size to use # TODO: rename to max_size
   test_size: 5000
   cache: true    # whether to cache preprocessed data
   download: true
-  preprocess: true
 
 
 # Tokenizer Configuration

@@ -1,6 +1,4 @@
-import os
 import time
-import json
 import random
 import numpy as np
 import torch
@@ -29,7 +27,7 @@ from training.logging import TrainingLogger
 from training.loss import LabelSmoothing, SimpleLossCompute
 from training.utils import get_learning_rate
 from inference.utils import BleuUtils
-from model.utils import count_params, create_model, create_config
+from model.utils import create_model
 from utils.config import Config
 
 class Trainer:
@@ -57,7 +55,6 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.config.training.epochs+1): # epochs are 1-indexed
-            import pdb; pdb.set_trace()
             print(f"Epoch: {epoch}")
             # initialize timer
             start = time.time()
@@ -203,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--language_pair", type=tuple, default=config.dataset.language_pair)
     parser.add_argument("--batch_size", type=int, default=config.training.batch_size)
     parser.add_argument("--max_padding_train", type=int, default=config.model.max_padding_train)
-    parser.add_argument("--dataset_name", type=str, choices=["wmt14", "m30k", "txt", "wmt24"], default=config.dataset.name)
+    parser.add_argument("--dataset_name", type=str, choices=["wmt14", "wmt24", "m30k", "toy", "txt"], default=config.dataset.name)
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--dataset_size", type=int, default=config.dataset.size)
     parser.add_argument("--random_seed", type=int, default=config.training.random_seed)
@@ -216,37 +213,11 @@ if __name__ == "__main__":
 
     set_seed(config.training.random_seed)
     
-    # load tokenizers and vocabulary
-    tokenizer_type = args.tokenizer_type
     tokenizer_src, tokenizer_tgt = build_tokenizers(config)
     config.model.src_vocab_size = len(tokenizer_src.vocab)
     config.model.tgt_vocab_size = len(tokenizer_tgt.vocab)
     config.extras.tokenizer_src = tokenizer_src
     config.extras.tokenizer_tgt = tokenizer_tgt
 
-    model = create_model(config)
-    print(f"Model: \n{model}")
-
-    data_mgr = DataManager(config, tokenizer_src, tokenizer_tgt)
-
-    # Use HuggingFace-optimized data loading
-    dataloaders = data_mgr.load_dataloaders()
-    
-    # create loss criterion, learning rate optimizer and scheduler
-    label_smoothing = LabelSmoothing(config.model.tgt_vocab_size, 
-                                     tokenizer_tgt.pad_token_id, 
-                                     config.training.label_smoothing)
-    criterion = SimpleLossCompute(label_smoothing)
-    optimizer = torch.optim.Adam(model.parameters(), 
-                                 lr=config.training.learning_rate.base, 
-                                 betas=(0.9, 0.98), 
-                                 eps=1e-9)
-    scheduler = LambdaLR(optimizer = optimizer, 
-                         lr_lambda = lambda step_num: get_learning_rate(
-                             step_num+1, 
-                             config.model.d_model, 
-                             warmup=config.training.learning_rate.warmup_steps))
-    
-    # train
     trainer = Trainer(config)
     trainer.train()

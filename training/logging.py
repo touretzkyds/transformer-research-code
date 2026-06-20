@@ -4,7 +4,6 @@ import numpy as np
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
-import scipy.interpolate as interp
 from tqdm import tqdm
 from numerize.numerize import numerize as nu
 
@@ -104,9 +103,13 @@ class TrainingLogger(BaseLogger):
         plt.close()
 
     def interpolate(self, array, target_length):
-        mesh = interp.interp1d(np.arange(len(array)), array)
-        interpolated_array = mesh(np.linspace(0,len(array)-1,target_length)).tolist()
-        return interpolated_array
+        if len(array) == 0:
+            return []
+        if len(array) == 1:
+            return [array[0]] * target_length
+        x = np.arange(len(array))
+        xp = np.linspace(0, len(array) - 1, target_length)
+        return np.interp(xp, x, array).tolist()
 
     def format_title(self, title):
         segments = [title]

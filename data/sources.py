@@ -93,6 +93,9 @@ class DataSource:
             # dataset_dict.save_to_disk("artifacts/saved_data/tokenized_data/wmt24_de_en_reformatted_new")
         elif self.name == "m30k":
             dataset_dict = load_dataset("bentrevett/multi30k", num_proc=os.cpu_count()-1)
+        elif self.name == "toy":
+            dataset_dict = load_dataset("neelpawar/wmt24-de-en", "toy")
+            dataset_dict = self._random_sample(dataset_dict, self.size)
         elif self.name == "txt":
             with open(self.dataset_path, 'r') as f:
                 file_text = f.readlines()
@@ -100,7 +103,7 @@ class DataSource:
                 tgt_sentences = [sentence_pair.split("|")[1].strip() for sentence_pair in file_text]
                 raw_data = list(zip(src_sentences, tgt_sentences))
         else: 
-            raise ValueError(f"Received {self.name}, available options: 'wmt14', 'wmt24', 'm30k', 'txt'")
+            raise ValueError(f"Received {self.name}, available options: 'wmt14', 'wmt24', 'm30k', 'txt', 'toy', 'txt'")
         
         print(f"Selected {len(dataset_dict['train'])} samples from the training dataset")
         return dataset_dict
@@ -109,11 +112,11 @@ class DataSource:
         root_dir = os.getenv("MTDATA")
         data_files = {
             "train.de": op.join(root_dir, "wmt24-eng-deu", "train.deu"), 
-                      "train.en": op.join(root_dir, "wmt24-eng-deu", "train.eng"), 
-                      "val.de": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt23test.de"), 
-                      "val.en": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt23test.en"), 
-                      "test.de": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt24test.de"), 
-                      "test.en": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt24test.en")}
+            "train.en": op.join(root_dir, "wmt24-eng-deu", "train.eng"), 
+            "val.de": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt23test.de"), 
+            "val.en": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt23test.en"), 
+            "test.de": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt24test.de"), 
+            "test.en": op.join(root_dir, "wmt24-eng-deu", "tests", "wmt24test.en")}
         dataset_dict = load_dataset("text", data_files=data_files)
         for key in dataset_dict.keys():
             if ".de" in key:
