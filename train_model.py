@@ -220,4 +220,5 @@ if __name__ == "__main__":
     config.extras.tokenizer_tgt = tokenizer_tgt
 
     trainer = Trainer(config)
+    model = trainer.model  # useful for user inspection
     trainer.train()
