@@ -46,7 +46,7 @@ class Translator:
                 'artifacts_dir': 'artifacts'
             },
             'model': {
-                'N': 6,
+                'n_layers': 6,
                 'max_padding': 20
             },
             'dataset': {
@@ -79,7 +79,7 @@ class Translator:
         # Set default values for required attributes
         config['logging'].setdefault('model_dir', 'artifacts/saved_models')
         config['logging'].setdefault('artifacts_dir', 'artifacts')
-        config['model'].setdefault('N', 6)
+        config['model'].setdefault('n_layers', 6)
         config['model'].setdefault('max_padding', 20)
         config['dataset'].setdefault('name', 'wmt14')
         config['dataset'].setdefault('size', 5000000)
@@ -112,8 +112,8 @@ class Translator:
             # Ensure required config attributes exist
             if not hasattr(self.config, 'epoch'):
                 raise ValueError("Missing 'epoch' in configuration")
-            if not hasattr(self.config.model, 'N'):
-                raise ValueError("Missing 'model.N' in configuration")
+            if not hasattr(self.config.model, 'n_layers'):
+                raise ValueError("Missing 'model.n_layers' in configuration")
             if not hasattr(self.config.dataset, 'name'):
                 raise ValueError("Missing 'dataset.name' in configuration")
             if not hasattr(self.config.dataset, 'size'):
@@ -121,7 +121,7 @@ class Translator:
             if not hasattr(self.config.logging, 'model_dir'):
                 raise ValueError("Missing 'logging.model_dir' in configuration")
             
-            save_path = f"{self.config.logging.model_dir}/N{self.config.model.N}/{self.config.dataset.name}/dataset_size_{self.config.dataset.size}/epoch_{self.config.epoch:02d}.pt"
+            save_path = f"{self.config.logging.model_dir}/n_layers_{self.config.model.n_layers}/{self.config.dataset.name}/dataset_size_{self.config.dataset.size}/epoch_{self.config.epoch:02d}.pt"
             
             if not os.path.exists(save_path):
                 raise FileNotFoundError(f"Model file not found: {save_path}")
@@ -185,7 +185,7 @@ class Translator:
         '''Validate that all required configuration attributes exist'''
         required_attrs = [
             'epoch',
-            'model.N',
+            'model.n_layers',
             'dataset.name',
             'dataset.size',
             'logging.model_dir',
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         parser.add_argument("--epoch", type=int, default=1
                             ) # 1-indexed epoch number of saved model
         parser.add_argument("--num_examples", type=int, default=5)
-        parser.add_argument("--N", type=int, default=6)
+        parser.add_argument("--n_layers", type=int, default=6)
         parser.add_argument("--split", type=str, default='test', choices=['train', 'val', 'test'])
         parser.add_argument("--dataset_name", type=str, default='wmt14')
         parser.add_argument("--dataset_size", type=int, default=5000000)
@@ -257,7 +257,7 @@ if __name__ == "__main__":
         translator.logger.save_as_txt('artifacts/generated_translations/', 
                             title='Transformer translations',
                             title_dict={k:translator.config[k] for k in 
-                                        ['N', 'epoch', 'num_examples', 
+                                        ['n_layers', 'epoch', 'num_examples',
                                          'dataset_size', 'dataset_name']})
         
         print("Translation results saved successfully!")

@@ -196,7 +196,7 @@ if __name__ == "__main__":
     config = Config("configs/default.yaml")
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=config.training.epochs)
-    parser.add_argument("--N", type=int, default=config.model.N)
+    parser.add_argument("--n_layers", type=int, default=config.model.n_layers)
     parser.add_argument("--language_pair", type=tuple, default=config.dataset.language_pair)
     parser.add_argument("--batch_size", type=int, default=config.training.batch_size)
     parser.add_argument("--max_padding_train", type=int, default=config.model.max_padding_train)

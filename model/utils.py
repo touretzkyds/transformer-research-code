@@ -8,7 +8,7 @@ def create_model(config):
     model = TransformerModel(
         config.model.src_vocab_size,
         config.model.tgt_vocab_size,
-        config.model.N,
+        config.model.n_layers,
         config.model.d_model,
         config.model.d_ff,
         config.model.n_heads,

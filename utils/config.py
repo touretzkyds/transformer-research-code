@@ -50,7 +50,7 @@ class Config(DottedDict):
         
     def build_arg_mapping(self):
         self.arg_mapping = {
-            'N': 'model.N',
+            'n_layers': 'model.n_layers',
             'epochs': 'training.epochs',
             'batch_size': 'training.batch_size',
             'dataset_name': 'dataset.name',

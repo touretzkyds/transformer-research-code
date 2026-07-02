@@ -4,14 +4,14 @@ import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin
 
 class TransformerModel(nn.Module, PyTorchModelHubMixin):
-    def __init__(self, src_vocab_size, tgt_vocab_size, N=6, d_model=512, d_ff=2048,
+    def __init__(self, src_vocab_size, tgt_vocab_size, n_layers=6, d_model=512, d_ff=2048,
                  h=8, dropout_prob=0.1):
         '''
         This class assembles the transformer model from the individual submodules created,
         block by block as shown in Figure 1 of the paper.
            src_vocab_size: number of tokens in encoder's embedding dictionary
            tgt_vocab_size: number of tokens in decoder's embedding dictionary
-           N: number of encoder/decoder layers
+           n_layers: number of encoder/decoder layers
            d_model: embedding size
            d_ff: feedforward layer size
            h: number of attention heads
@@ -21,12 +21,12 @@ class TransformerModel(nn.Module, PyTorchModelHubMixin):
         # Source (encoding) layers
         self.input_embedding_layer = EmbeddingLayer(src_vocab_size, d_model)
         self.input_positional_enc_layer = PositionalEncodingLayer(d_model, dropout_prob)
-        self.encoder_stack = EncoderStack(h, d_model, d_ff, dropout_prob, N)
+        self.encoder_stack = EncoderStack(h, d_model, d_ff, dropout_prob, n_layers)
 
         # Target (decoding) layers
         self.output_embedding_layer = EmbeddingLayer(tgt_vocab_size, d_model)
         self.output_positional_enc_layer = PositionalEncodingLayer(d_model, dropout_prob)
-        self.decoder_stack = DecoderStack(h, d_model, d_ff, dropout_prob, N)
+        self.decoder_stack = DecoderStack(h, d_model, d_ff, dropout_prob, n_layers)
 
         # linear and softmax layers
         self.linear_and_softmax_layers = LinearAndSoftmaxLayers(d_model, tgt_vocab_size)
@@ -103,12 +103,12 @@ class PositionalEncodingLayer(nn.Module):
 
 
 class EncoderStack(nn.Module):
-    "Core encoder is a stack of N layers"
-    def __init__(self, h, d_model, d_ff, dropout_prob, N):
+    "Core encoder is a stack of n_layers layers"
+    def __init__(self, h, d_model, d_ff, dropout_prob, n_layers):
         super(EncoderStack, self).__init__()
         # create and stack encoder layers
         encoder_layer_list = []
-        for i in range(N):
+        for i in range(n_layers):
             encoder_layer_i = EncoderLayer(h, d_model, d_ff, dropout_prob)
             encoder_layer_list.append(encoder_layer_i)
         self.encoder_layers = nn.ModuleList(encoder_layer_list)
@@ -129,13 +129,13 @@ class EncoderStack(nn.Module):
 
 class DecoderStack(nn.Module):
     """
-    Generic N layer decoder with masking.
+    Generic n_layers layer decoder with masking.
     """
-    def __init__(self, h, d_model, d_ff, dropout_prob, N):
+    def __init__(self, h, d_model, d_ff, dropout_prob, n_layers):
         super(DecoderStack, self).__init__()
         # create and stack decoder layers
         decoder_layer_list = []
-        for i in range(N):
+        for i in range(n_layers):
             decoder_layer_i = DecoderLayer(h, d_model, d_ff, dropout_prob)
             decoder_layer_list.append(decoder_layer_i)
         self.decoder_layers = nn.ModuleList(decoder_layer_list)
@@ -160,9 +160,9 @@ class Sublayer(nn.Module):
     operations:
     x + Dropout(Workhorse(LayerNorm(x)))
     """
-    def __init__(self, sublayer_type, workhorse, size, dropout_prob):
+    def __init__(self, sublayer_type, workhorse, d_model, dropout_prob):
         super(Sublayer, self).__init__()
-        self.norm_layer = LayerNorm(size)
+        self.norm_layer = LayerNorm(d_model)
         self.sublayer_type = sublayer_type # "attention" or "feedforward"
         self.workhorse = workhorse  
         self.dropout_layer = nn.Dropout(p = dropout_prob)
@@ -197,10 +197,10 @@ class Sublayer(nn.Module):
 class LayerNorm(nn.Module):
     "Construct a layernorm module (See citation for details)." # TODO: citation
 
-    def __init__(self, num_features, eps=1e-6):
+    def __init__(self, d_model, eps=1e-6):
         super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(num_features))
-        self.b_2 = nn.Parameter(torch.zeros(num_features))
+        self.a_2 = nn.Parameter(torch.ones(d_model))
+        self.b_2 = nn.Parameter(torch.zeros(d_model))
         self.eps = eps
 
     def forward(self, x):
@@ -225,13 +225,13 @@ class EncoderLayer(nn.Module):
         #   Encoder layers use the same input for query, key, and value (no separate memory input).
         self.self_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=self_attn_module,
-                                           size=d_model, 
+                                           d_model=d_model, 
                                            dropout_prob=dropout_prob)
         # create feedforward sublayer
         pos_ff_module = PositionwiseFeedForwardNetwork(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
         self.pos_ff_sublayer = Sublayer(sublayer_type="feedforward", 
                                         workhorse=pos_ff_module, 
-                                        size=d_model, 
+                                        d_model=d_model, 
                                         dropout_prob=dropout_prob)
 
     def forward(self, x):
@@ -257,7 +257,7 @@ class DecoderLayer(nn.Module):
         self_attn_module = MultiHeadedAttentionModule(h, d_model, dropout_prob) # TODO: "module" or "workhorse"?
         self.self_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=self_attn_module,
-                                           size=d_model, 
+                                           d_model=d_model, 
                                            dropout_prob=dropout_prob)
 
         # Create cross attention sublayer:TODO: update this doc
@@ -267,14 +267,14 @@ class DecoderLayer(nn.Module):
         cross_attn_module = MultiHeadedAttentionModule(h, d_model, dropout_prob) # TODO: "module" or "workhorse"?
         self.cross_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=cross_attn_module,
-                                           size=d_model, 
+                                           d_model=d_model, 
                                            dropout_prob=dropout_prob)
 
         # create feedforward sublayer
         pos_ff_module = PositionwiseFeedForwardNetwork(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
         self.pos_ff_sublayer = Sublayer(sublayer_type="feedforward", 
                                         workhorse=pos_ff_module, 
-                                        size=d_model, 
+                                        d_model=d_model, 
                                         dropout_prob=dropout_prob)
 
 

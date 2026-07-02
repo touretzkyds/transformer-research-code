@@ -11,7 +11,7 @@ class BaseLogger:
     def __init__(self, config):
         self.config = config
         self.title_dict = {
-            "N": config.model.N,
+            "n_layers": config.model.n_layers,
             "name": config.dataset.name,
             "size": nu(config.dataset.size),
             "bs": config.training.batch_size,
@@ -140,7 +140,7 @@ class TranslationLogger(BaseLogger):
 
     def save_as_txt(self, base_path, title, title_dict):
         save_path = (base_path + 
-                     f"N{title_dict['N']}/dataset_size_{title_dict['dataset_size']}/{title_dict['dataset_name']}_epoch_{title_dict['epoch']:02d}.txt")
+                     f"n_layers_{title_dict['n_layers']}/dataset_size_{title_dict['dataset_size']}/{title_dict['dataset_name']}_epoch_{title_dict['epoch']:02d}.txt")
         print(f"Saving translations to {save_path}")
         with open(save_path, "w") as f:
             avg_bleu = round(sum(self.bleu_scores) / len(self.bleu_scores), 4)
