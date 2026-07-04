@@ -3,7 +3,7 @@ import argparse
 import torch
 from tqdm import tqdm
 from tokenization.utils import build_tokenizers
-from data.dataloading import load_datasets, load_dataloaders
+from data.dataloading import load_dataloaders
 from training.logging import TranslationLogger
 from inference.utils import greedy_decode, BleuUtils
 import os
@@ -16,7 +16,7 @@ class Translator:
         '''
         # load model and training configurations saved from training run
         self.load_config(config_path, args)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(self.config.hardware.device)
     
     def load_config(self, filepath, args):
         '''
@@ -92,8 +92,6 @@ class Translator:
         Load tokenizers and vocabularies
         '''
         try:
-            if not hasattr(self.config, 'tokenizer') or not hasattr(self.config.tokenizer, 'type'):
-                raise ValueError("Missing 'tokenizer.type' in configuration")
             if not hasattr(self.config, 'dataset') or not hasattr(self.config.dataset, 'language_pair'):
                 raise ValueError("Missing 'dataset.language_pair' in configuration")
             
@@ -101,7 +99,7 @@ class Translator:
             self.tokenizer_src = tokenizer_src
             self.tokenizer_tgt = tokenizer_tgt
             
-            print(f"Successfully loaded tokenizers: {self.config.tokenizer.type}")
+            print(f"Successfully loaded tokenizers")
             
         except Exception as e:
             print(f"Error preparing tokenizers: {e}")
@@ -190,7 +188,6 @@ class Translator:
             'dataset.size',
             'logging.model_dir',
             'translation.batch_limit',
-            'tokenizer.type'
         ]
         
         missing_attrs = []

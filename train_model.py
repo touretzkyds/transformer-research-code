@@ -103,11 +103,11 @@ class Trainer:
         epoch_loss = 0
         for i, batch in enumerate(self.dataloaders['train']):
             batch.prepare_for_training()
-            output_logprobabilities = self.model.forward(batch.src_tokens.to(self.config.hardware.device), 
-                                                batch.tgt_shifted_right.to(self.config.hardware.device),
-                                                batch.decoder_attention_mask.to(self.config.hardware.device))
+            output_logprobabilities = self.model.forward(batch.src_tokens.to(self.device), 
+                                                batch.tgt_shifted_right.to(self.device),
+                                                batch.decoder_attention_mask.to(self.device))
             # compute loss and BLEU score
-            loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.config.hardware.device), batch.ntokens)
+            loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.device), batch.ntokens)
             # backpropagate and apply optimizer-based gradient descent 
             loss.backward()
             
@@ -204,8 +204,6 @@ if __name__ == "__main__":
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--dataset_size", type=int, default=config.dataset.size)
     parser.add_argument("--random_seed", type=int, default=config.training.random_seed)
-    parser.add_argument("--experiment_name", type=str, default=config.logging.experiment_name)
-    parser.add_argument("--tokenizer_type", type=str, choices=["spacy", "bert"], default=config.tokenizer.type)
     
     args = parser.parse_args()
     config.update_from_args(args)

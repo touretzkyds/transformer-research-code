@@ -61,7 +61,7 @@ class TrainingLogger(BaseLogger):
                 f.write(f"Source: {src}\nTarget: {tgt}\nPredicted: {pred}\nPredicted Tokens: {pred_tok}\n")
                 f.write("-"*100 + "\n\n")
 
-    def saveplot(self, epoch_num, metric_names, title, plot_type, xlabel="Epoch"): # TODO: there seems to be a plotting error coming up on thorin. Commiting code as is, and can investigate when psc is up
+    def saveplot(self, epoch_num, metric_names, title, plot_type, xlabel="Epoch"):
         '''
         Plots and saves the metric history for specified list of metrics.
         '''
@@ -87,19 +87,20 @@ class TrainingLogger(BaseLogger):
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.set_xlabel(xlabel)
         ax.set_ylabel(plot_type.capitalize())
-        ax.set_title(composed_title, y=1.08)
 
         # plot secondary axis of epochs
         ax2 = ax.twiny()
         ax2.set_xlim(1, epoch_num)
         ax2.set_xlabel("Epoch")
-        # ax2.set_xticks(range(1, epoch_num + 1))
         ax.grid(visible=True)
         ax.legend()
 
+        fig.suptitle(composed_title)
+        fig.subplots_adjust(top=0.82)
+
         # save plot
         os.makedirs(self.experiment_save_dir, exist_ok=True)
-        fig.savefig(os.path.join(self.experiment_save_dir, f"{plot_type}.svg"), format='svg')
+        fig.savefig(os.path.join(self.experiment_save_dir, f"{plot_type}.svg"), format='svg', bbox_inches='tight')
         plt.close()
 
     def interpolate(self, array, target_length):

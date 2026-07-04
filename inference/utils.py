@@ -1,59 +1,6 @@
 import torch
-import random
-import numpy as np
-import gc
 from torchmetrics.functional.text.bleu import bleu_score
-from tqdm import tqdm
-from torch.utils.data import DataLoader
 
-def debug_gpu_tensors(verbose=False):
-    """
-    Debug utility to show all tensors on GPU.
-    
-    Args:
-        verbose: If True, shows detailed information about each tensor
-    
-    Returns:
-        dict with summary statistics
-    """
-    if not torch.cuda.is_available():
-        print("CUDA not available")
-        return None
-    
-    gpu_tensors = []
-    for obj in gc.get_objects():
-        if torch.is_tensor(obj) and obj.is_cuda:
-            gpu_tensors.append({
-                'shape': obj.shape,
-                'dtype': obj.dtype,
-                'device': str(obj.device),
-                'size_mb': obj.element_size() * obj.nelement() / 1024**2,
-                'requires_grad': obj.requires_grad,
-                'is_leaf': obj.is_leaf if hasattr(obj, 'is_leaf') else None
-            })
-    
-    total_memory = sum(t['size_mb'] for t in gpu_tensors)
-    
-    print(f"\n{'='*60}")
-    print(f"GPU Tensor Summary")
-    print(f"{'='*60}")
-    print(f"Total tensors on GPU: {len(gpu_tensors)}")
-    print(f"Total GPU memory used by tensors: {total_memory:.2f} MB")
-    print(f"PyTorch allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
-    print(f"PyTorch reserved: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
-    
-    if verbose and gpu_tensors:
-        print(f"\nDetailed tensor list:")
-        print(f"{'Shape':<20} {'Dtype':<15} {'Size (MB)':<12} {'Device':<10} {'Grad':<6}")
-        print(f"{'-'*80}")
-        for t in sorted(gpu_tensors, key=lambda x: x['size_mb'], reverse=True):
-            print(f"{str(t['shape']):<20} {str(t['dtype']):<15} {t['size_mb']:<12.2f} {t['device']:<10} {str(t['requires_grad']):<6}")
-    
-    return {
-        'num_tensors': len(gpu_tensors),
-        'total_memory_mb': total_memory,
-        'tensors': gpu_tensors if verbose else None
-    }
 
 def greedy_decode(model, batch, max_padding, tokenizer_tgt):
     """
@@ -130,7 +77,7 @@ class BleuUtils:
         self.max_padding_test = config.model.max_padding_test
         self.tokenizer_tgt = config.extras.tokenizer_tgt
         self.tokenizer_src = config.extras.tokenizer_src
-        self.device = config.hardware.device
+        self.device = torch.device(config.hardware.device)
         self.logger = logger
         
     def evaluate_bleu(self, model, dataloader, epoch, split_name):

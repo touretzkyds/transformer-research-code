@@ -58,6 +58,5 @@ class Config(DottedDict):
             'max_padding_train': 'model.max_padding_train',
             'max_padding_test': 'model.max_padding_test',
             'cache': ['dataset.cache', 'tokenizer.cache'],
-            'tokenizer_type': 'tokenizer.type',
             'random_seed': 'training.random_seed'
         }

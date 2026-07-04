@@ -18,11 +18,11 @@ training:
     base: 1.0
     warmup_steps: 3000
   accumulation_steps: 10
-  random_seed: 42 # TODO: rename to seed
+  random_seed: 42
   label_smoothing: 0.1
 # Dataset Configurations
 dataset:
-  name: "wmt24"  # Options: wmt14, m30k, wmt24
+  name: "toy"  # Options: wmt14, m30k, wmt24
   language_pair: ["de", "en"]
   size: 10000  # max dataset size to use # TODO: rename to max_size
   test_size: 5000
@@ -32,13 +32,10 @@ dataset:
 
 # Tokenizer Configuration
 tokenizer:
-  type: "bert"   # Options: bert, spacy
   cache: true    # whether to cache tokenizers
 
 # Logging Configuration
 logging:
-  experiment_name: "transformer_training"
-  tracking_uri: "http://127.0.0.1:8080"
   artifacts_dir: "artifacts"
   subdirs:
     models: "saved_models"
@@ -48,7 +45,7 @@ logging:
 
 # Hardware Configuration
 hardware:
-  device: "cuda"  # Options: cuda, cpu
+  device: "cpu"  # Options: cuda, cpu, mps
   data_parallel: true  # whether to use DataParallel for multi-GPU training
 
 # Translation Configuration

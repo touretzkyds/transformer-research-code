@@ -63,18 +63,14 @@ class TransformerModel(nn.Module, PyTorchModelHubMixin):
         return output_logprobabilities
     
 
-class EmbeddingLayer(nn.Module): # TODO nn.Embedding from nn.Module
+class EmbeddingLayer(nn.Embedding):
     def __init__(self, vocab, d_model):
-        super(EmbeddingLayer, self).__init__()
-        self.lookup_table = nn.Embedding(vocab, d_model)
+        super(EmbeddingLayer, self).__init__(vocab, d_model)
         self.scale_factor = math.sqrt(d_model)
 
-    def forward(self, token): # TODO: super.forward() or similar
-        # get embedding vector
-        embedding_vector = self.lookup_table(token)
-        # scale the vector
-        scaled_embedding_vector = embedding_vector * self.scale_factor
-        return scaled_embedding_vector
+    def forward(self, token):
+        embedding_vector = super().forward(token)
+        return embedding_vector * self.scale_factor
 
 
 class PositionalEncodingLayer(nn.Module):
