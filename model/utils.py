@@ -2,6 +2,7 @@ import torch.nn as nn
 from numerize.numerize import numerize as nu
 
 from model.full_model import TransformerModel
+from utils.device import resolve_device, should_use_data_parallel
 
 
 def create_model(config):
@@ -25,8 +26,10 @@ def create_model(config):
         model.linear_and_softmax_layers,
     ]:
         count_params(layer)
-    if config.hardware.data_parallel:
+    device = resolve_device(config.hardware.device)
+    if should_use_data_parallel(config):
         model = nn.DataParallel(model)
+    model = model.to(device)
     return model
 
 

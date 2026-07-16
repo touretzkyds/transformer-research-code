@@ -45,8 +45,8 @@ logging:
 
 # Hardware Configuration
 hardware:
-  device: "cpu"  # Options: cuda, cpu, mps
-  data_parallel: true  # whether to use DataParallel for multi-GPU training
+  device: "cuda"  # Options: cuda, cpu, mps
+  data_parallel: false  # CUDA-only; keep false on Mac (MPS)
 
 # Translation Configuration
 translation:

@@ -16,9 +16,10 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 # import project modules
 from tokenization.utils import build_tokenizers
@@ -29,6 +30,7 @@ from training.utils import get_learning_rate
 from inference.utils import BleuUtils
 from model.utils import create_model
 from utils.config import Config
+from utils.device import resolve_device
 
 class Trainer:
     def __init__(self, config):
@@ -44,7 +46,7 @@ class Trainer:
         self.data_mgr = DataManager(config, self.tokenizer_src, self.tokenizer_tgt)
         self.dataloaders = self.data_mgr.load_dataloaders()
         self.bleu_utils = BleuUtils(config, self.logger)
-        self.device = config.hardware.device
+        self.device = resolve_device(config.hardware.device)
         self.max_padding_test = config.model.max_padding_test
         self.accum_iter = config.training.accumulation_steps
         self.save_frequency = 2
