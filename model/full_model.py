@@ -224,16 +224,16 @@ class EncoderLayer(nn.Module):
                                            d_model=d_model, 
                                            dropout_prob=dropout_prob)
         # create feedforward sublayer
-        pos_ff_module = PositionwiseFeedForwardNetwork(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
-        self.pos_ff_sublayer = Sublayer(sublayer_type="feedforward", 
-                                        workhorse=pos_ff_module, 
+        ff_module = FeedForward(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
+        self.ff_sublayer = Sublayer(sublayer_type="feedforward", 
+                                        workhorse=ff_module, 
                                         d_model=d_model, 
                                         dropout_prob=dropout_prob)
 
     def forward(self, x):
         self_attn_sublayer_output = self.self_attn_sublayer(x)
-        pos_ff_sublayer_output = self.pos_ff_sublayer(self_attn_sublayer_output)
-        return pos_ff_sublayer_output
+        ff_sublayer_output = self.ff_sublayer(self_attn_sublayer_output)
+        return ff_sublayer_output
 
 
 class DecoderLayer(nn.Module):
@@ -267,9 +267,9 @@ class DecoderLayer(nn.Module):
                                            dropout_prob=dropout_prob)
 
         # create feedforward sublayer
-        pos_ff_module = PositionwiseFeedForwardNetwork(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
-        self.pos_ff_sublayer = Sublayer(sublayer_type="feedforward", 
-                                        workhorse=pos_ff_module, 
+        ff_module = FeedForward(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
+        self.ff_sublayer = Sublayer(sublayer_type="feedforward", 
+                                        workhorse=ff_module, 
                                         d_model=d_model, 
                                         dropout_prob=dropout_prob)
 
@@ -283,9 +283,9 @@ class DecoderLayer(nn.Module):
         cross_attn_sublayer_output = self.cross_attn_sublayer(self_attn_sublayer_output, 
                                                              memory = memory)
         # feedforward network
-        pos_ff_sublayer_output = self.pos_ff_sublayer(x = cross_attn_sublayer_output)
+        ff_sublayer_output = self.ff_sublayer(x = cross_attn_sublayer_output)
 
-        return pos_ff_sublayer_output
+        return ff_sublayer_output
 
 
 class MultiHeadedAttentionModule(nn.Module):
@@ -368,16 +368,15 @@ class MultiHeadedAttentionModule(nn.Module):
         return attention_outputs, attention_weightings
 
 
-class PositionwiseFeedForwardNetwork(nn.Module):
+class FeedForward(nn.Module):
     """
-    Implements a fully connected position-wise feed-forward network consisting 
+    Implements a fully connected feed-forward network consisting 
     of two linear layers with a ReLU in between them, as per equation (2) 
-    under section 3.3 of the paper. Applies dropout to the output of the 
-    first layer as per ?? (@dst.cs.cmu.edu) 
+    under section 3.3 of the paper.
     """
 
     def __init__(self, d_model, d_ff, dropout_prob=0.1):
-        super(PositionwiseFeedForwardNetwork, self).__init__()
+        super(FeedForward, self).__init__()
         self.linear_layer_1 = nn.Linear(d_model, d_ff)
         self.relu = nn.ReLU(inplace=True)
         self.dropout_layer = nn.Dropout(dropout_prob)

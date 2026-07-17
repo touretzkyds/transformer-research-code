@@ -206,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--dataset_size", type=int, default=config.dataset.size)
     parser.add_argument("--random_seed", type=int, default=config.training.random_seed)
+    parser.add_argument("--device", type=str, choices=["cuda", "cpu", "mps"], default=config.hardware.device)
     
     args = parser.parse_args()
     config.update_from_args(args)
