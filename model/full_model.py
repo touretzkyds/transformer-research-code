@@ -360,7 +360,6 @@ class MultiHeadedAttentionModule(nn.Module):
         # equation (1) of paper
         derived_keys_transpose = derived_keys.transpose(-2, -1)
         scores = torch.matmul(derived_queries, derived_keys_transpose) / math.sqrt(self.d_k)
-        print(f'{derived_queries.shape=} {derived_keys_transpose.shape=} {scores.shape=}')
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
         attention_weightings = scores.softmax(dim=-1)
