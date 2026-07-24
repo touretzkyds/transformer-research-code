@@ -354,14 +354,13 @@ class MultiHeadedAttentionModule(nn.Module):
             1. Compute alignment scores, ie. dot product QK^T
             2. Scale by square root of key size
             3. Optionally apply masking if computing attention within the decoder
-            4. Apply dropout for regularization 
             4. Apply softmax to get an attention matrix of weightings
-            5. Multiply attention matrix with values to get resulting attention outputs
+            5. Apply dropout for regularization 
+            6. Multiply attention matrix with values to get resulting attention outputs
         '''
-        # key size
-        d_k = derived_queries.size(-1)
         # equation (1) of paper
-        scores = torch.matmul(derived_queries, derived_keys.transpose(-2, -1)) / math.sqrt(d_k)
+        derived_keys_transpose = derived_keys.transpose(-2, -1)
+        scores = torch.matmul(derived_queries, derived_keys_transpose) / math.sqrt(self.d_k)
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
         attention_weightings = scores.softmax(dim=-1)
