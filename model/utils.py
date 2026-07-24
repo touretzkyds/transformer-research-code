@@ -11,6 +11,8 @@ def create_model(config):
         config.model.tgt_vocab_size,
         config.model.n_layers,
         config.model.d_model,
+        config.model.d_k,
+        config.model.d_v,
         config.model.d_ff,
         config.model.n_heads,
         config.model.dropout_prob,

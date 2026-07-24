@@ -4,7 +4,7 @@ import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin
 
 class TransformerModel(nn.Module, PyTorchModelHubMixin):
-    def __init__(self, src_vocab_size, tgt_vocab_size, n_layers=6, d_model=512, d_ff=2048,
+    def __init__(self, src_vocab_size, tgt_vocab_size, n_layers=6, d_model=512, d_k=64, d_v=64, d_ff=2048,
                  h=8, dropout_prob=0.1):
         '''
         This class assembles the transformer model from the individual submodules created,
@@ -13,6 +13,8 @@ class TransformerModel(nn.Module, PyTorchModelHubMixin):
            tgt_vocab_size: number of tokens in decoder's embedding dictionary
            n_layers: number of encoder/decoder layers
            d_model: embedding size
+           d_k: query and key embedding size
+           d_v: value embedding size
            d_ff: feedforward layer size
            h: number of attention heads
         '''
@@ -21,12 +23,12 @@ class TransformerModel(nn.Module, PyTorchModelHubMixin):
         # Source (encoding) layers
         self.input_embedding_layer = EmbeddingLayer(src_vocab_size, d_model)
         self.input_positional_enc_layer = PositionalEncodingLayer(d_model, dropout_prob)
-        self.encoder_stack = EncoderStack(h, d_model, d_ff, dropout_prob, n_layers)
+        self.encoder_stack = EncoderStack(h, d_model, d_k, d_v, d_ff, dropout_prob, n_layers)
 
         # Target (decoding) layers
         self.output_embedding_layer = EmbeddingLayer(tgt_vocab_size, d_model)
         self.output_positional_enc_layer = PositionalEncodingLayer(d_model, dropout_prob)
-        self.decoder_stack = DecoderStack(h, d_model, d_ff, dropout_prob, n_layers)
+        self.decoder_stack = DecoderStack(h, d_model, d_k, d_v, d_ff, dropout_prob, n_layers)
 
         # linear and softmax layers
         self.linear_and_softmax_layers = LinearAndSoftmaxLayers(d_model, tgt_vocab_size)
@@ -100,12 +102,12 @@ class PositionalEncodingLayer(nn.Module):
 
 class EncoderStack(nn.Module):
     "Core encoder is a stack of n_layers layers"
-    def __init__(self, h, d_model, d_ff, dropout_prob, n_layers):
+    def __init__(self, h, d_model, d_k, d_v, d_ff, dropout_prob, n_layers):
         super(EncoderStack, self).__init__()
         # create and stack encoder layers
         encoder_layer_list = []
         for i in range(n_layers):
-            encoder_layer_i = EncoderLayer(h, d_model, d_ff, dropout_prob)
+            encoder_layer_i = EncoderLayer(h, d_model, d_k, d_v, d_ff, dropout_prob)
             encoder_layer_list.append(encoder_layer_i)
         self.encoder_layers = nn.ModuleList(encoder_layer_list)
         # layer normalization
@@ -127,12 +129,12 @@ class DecoderStack(nn.Module):
     """
     Generic n_layers layer decoder with masking.
     """
-    def __init__(self, h, d_model, d_ff, dropout_prob, n_layers):
+    def __init__(self, h, d_model, d_k, d_v, d_ff, dropout_prob, n_layers):
         super(DecoderStack, self).__init__()
         # create and stack decoder layers
         decoder_layer_list = []
         for i in range(n_layers):
-            decoder_layer_i = DecoderLayer(h, d_model, d_ff, dropout_prob)
+            decoder_layer_i = DecoderLayer(h, d_model, d_k, d_v, d_ff, dropout_prob)
             decoder_layer_list.append(decoder_layer_i)
         self.decoder_layers = nn.ModuleList(decoder_layer_list)
         # layer normalization
@@ -211,10 +213,10 @@ class EncoderLayer(nn.Module):
     one positionwise feed forward sublayer
     """
 
-    def __init__(self, h, d_model, d_ff, dropout_prob):
-        super(EncoderLayer, self).__init__()
+    def __init__(self, h, d_model, d_k, d_v, d_ff, dropout_prob):
+        super(EncoderLayer , self).__init__()
         # Initialize self attention network
-        self_attn_module = MultiHeadedAttentionModule(h, d_model, dropout_prob) # TODO: "module" or "workhorse"?
+        self_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         # Create self attention sublayer:
         #   Wrap the self attention module in a Sublayer.
         #   This Sublayer likely handles residual connections and normalization.
@@ -224,7 +226,7 @@ class EncoderLayer(nn.Module):
                                            d_model=d_model, 
                                            dropout_prob=dropout_prob)
         # create feedforward sublayer
-        ff_module = FeedForward(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
+        ff_module = FeedForward(d_model, d_ff, dropout_prob)
         self.ff_sublayer = Sublayer(sublayer_type="feedforward", 
                                         workhorse=ff_module, 
                                         d_model=d_model, 
@@ -243,14 +245,14 @@ class DecoderLayer(nn.Module):
     'source attention' which performs attention on the encoder output
     """
 
-    def __init__(self, h, d_model, d_ff, dropout_prob):
+    def __init__(self, h, d_model, d_k, d_v, d_ff, dropout_prob):
         super(DecoderLayer, self).__init__()
 
         # Create self attention sublayer:
         #   Create a closure referencing a self attention layer. TODO: update this doc
         #   The self attention module of the decoder layer uses a mask
         #   to prevent positions from attending to subsequent positions.
-        self_attn_module = MultiHeadedAttentionModule(h, d_model, dropout_prob) # TODO: "module" or "workhorse"?
+        self_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         self.self_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=self_attn_module,
                                            d_model=d_model, 
@@ -260,14 +262,14 @@ class DecoderLayer(nn.Module):
         #   Create a closure referencing a cross attention layer.
         #   "memory" indicates that decoder layer operates on the output embedding from the
         #   encoder stack as explained in section 3.2.3 of the paper.
-        cross_attn_module = MultiHeadedAttentionModule(h, d_model, dropout_prob) # TODO: "module" or "workhorse"?
+        cross_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         self.cross_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=cross_attn_module,
                                            d_model=d_model, 
                                            dropout_prob=dropout_prob)
 
         # create feedforward sublayer
-        ff_module = FeedForward(d_model, d_ff, dropout_prob) # TODO: "module" or "workhorse"?
+        ff_module = FeedForward(d_model, d_ff, dropout_prob)
         self.ff_sublayer = Sublayer(sublayer_type="feedforward", 
                                         workhorse=ff_module, 
                                         d_model=d_model, 
@@ -296,19 +298,18 @@ class MultiHeadedAttentionModule(nn.Module):
     performs scaled dot product attention on the vectors, returning the
     attended vector.
     """
-    def __init__(self, h, d_model, dropout_prob=0.1):
+    def __init__(self, h, d_model, d_k, d_v, dropout_prob=0.1):
         super().__init__()
-        # Model dimension must be multiple of number of heads
-        assert d_model % h == 0, f'dimension mismatch, d_model must be a multiple of h (got {d_model} and {h})'
-        self.h = h # number of heads
-        self.d_k = d_model // h # assume key size = value size
 
         # create linear layers for weights corresponding to q, k, v
-        self.w_q = nn.Linear(d_model, d_model)
-        self.w_k = nn.Linear(d_model, d_model)
-        self.w_v = nn.Linear(d_model, d_model)
+        self.h = h
+        self.d_k = d_k
+        self.d_v = d_v
+        self.w_q = nn.Linear(d_model, h * d_k)
+        self.w_k = nn.Linear(d_model, h * d_k)
+        self.w_v = nn.Linear(d_model, h * d_v)
         self.dropout_layer = nn.Dropout(p=dropout_prob)
-        self.linear_layer = nn.Linear(d_model, d_model)
+        self.linear_layer = nn.Linear(h * d_v, d_model)
 
     def forward(self, query, key, value, attention_mask=None):
         # The attention mask is not used in the encoder, and hence is only
@@ -318,20 +319,23 @@ class MultiHeadedAttentionModule(nn.Module):
         else:
             attention_mask_tensor = None
         batch_size = query.size(0)
-        # The w_q, w_k, w_v matrices compute the sized d_k derived query/key/value
-        # vectors for all h attention heads in one operation. We then 
-        # partition this into separate vectors for each attention head 
-        # (Paragraph 1, Section 3.2.2 of the paper).
-        partition_across_attn_heads = lambda x : x.view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
-        derived_queries = partition_across_attn_heads(self.w_q(query))
-        derived_keys = partition_across_attn_heads(self.w_k(key))
-        derived_values = partition_across_attn_heads(self.w_v(value))
+        partition_across_attn_heads = lambda x, d_qkv : x.view(batch_size, -1, self.h, d_qkv).transpose(1, 2)
+        # The w_q, w_k, w_v matrices compute the size d_k derived
+        # query/key and size d_v value vectors for all h attention
+        # heads in one operation. We then partition this into separate
+        # vectors for each attention head (Paragraph 1, Section 3.2.2
+        # of the paper).
+        derived_queries = partition_across_attn_heads(self.w_q(query), self.d_k)
+        derived_keys = partition_across_attn_heads(self.w_k(key), self.d_k)
+        derived_values = partition_across_attn_heads(self.w_v(value), self.d_v)
         # compute attention
         attention_outputs, attention_weightings = \
             self.attention_fn(derived_queries, derived_keys, derived_values, 
                               attention_mask_tensor)
         # save weightings only for visualization
         self.attention_weightings = attention_weightings
+
+
         # concatenate outputs of the h attention heads into one vector
         concatenated_attention_outputs = \
             attention_outputs.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
