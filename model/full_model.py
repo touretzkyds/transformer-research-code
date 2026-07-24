@@ -321,10 +321,10 @@ class MultiHeadedAttentionModule(nn.Module):
         batch_size = query.size(0)
         partition_across_attn_heads = lambda x, d_qkv : x.view(batch_size, -1, self.h, d_qkv).transpose(1, 2)
         # The w_q, w_k, w_v matrices compute the size d_k derived
-        # query/key and size d_v value vectors for all h attention
-        # heads in one operation. We then partition this into separate
-        # vectors for each attention head (Paragraph 1, Section 3.2.2
-        # of the paper).
+        # query/key and size d_v derived value vectors for all h
+        # attention heads in one operation. We then partition this
+        # into separate vectors for each attention head (Paragraph 1,
+        # Section 3.2.2 of the paper).
         derived_queries = partition_across_attn_heads(self.w_q(query), self.d_k)
         derived_keys = partition_across_attn_heads(self.w_k(key), self.d_k)
         derived_values = partition_across_attn_heads(self.w_v(value), self.d_v)
@@ -335,10 +335,9 @@ class MultiHeadedAttentionModule(nn.Module):
         # save weightings only for visualization
         self.attention_weightings = attention_weightings
 
-
         # concatenate outputs of the h attention heads into one vector
         concatenated_attention_outputs = \
-            attention_outputs.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
+            attention_outputs.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_v)
         # pass through final linear layer
         result = self.linear_layer(concatenated_attention_outputs)
         del query, key, value, derived_queries, derived_keys, derived_values
@@ -361,6 +360,7 @@ class MultiHeadedAttentionModule(nn.Module):
         # equation (1) of paper
         derived_keys_transpose = derived_keys.transpose(-2, -1)
         scores = torch.matmul(derived_queries, derived_keys_transpose) / math.sqrt(self.d_k)
+        print(f'{derived_queries.shape=} {derived_keys_transpose.shape=} {scores.shape=}')
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
         attention_weightings = scores.softmax(dim=-1)
