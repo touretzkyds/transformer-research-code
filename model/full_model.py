@@ -182,7 +182,7 @@ class Sublayer(nn.Module):
             # positionwise feedforward
             workhorse_output = self.workhorse(normed_x)
         else:
-            raise ValueError("Invalid configuration for Sublayer forward method")
+            raise ValueError(f"Invalid Sublayer type '{self.sublayer_type}'")
 
         # apply dropout
         dropout_output = self.dropout_layer(workhorse_output)
