@@ -86,11 +86,9 @@ class DataSource:
             # dataset_dict = load_from_disk("artifacts/saved_data/tokenized_data/wmt14_de_en")    
             # dataset_dict["train"] = dataset_dict["train"].select(range(30000))
         elif self.name == "wmt24":
-            dataset_dict = load_from_disk("artifacts/saved_data/tokenized_data/wmt24_de_en_5m")
-            dataset_dict = self._reformat_wmt24(dataset_dict)
+            dataset_dict = load_dataset("neelpawar/wmt24-de-en", "curated_5m")
             dataset_dict = self._random_sample(dataset_dict, self.size + self.test_size)
             dataset_dict = self._overwrite_val_test_wmt24(dataset_dict)
-            # dataset_dict.save_to_disk("artifacts/saved_data/tokenized_data/wmt24_de_en_reformatted_new")
         elif self.name == "m30k":
             dataset_dict = load_dataset("bentrevett/multi30k", num_proc=os.cpu_count()-1)
         elif self.name == "toy":

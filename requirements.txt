@@ -3,10 +3,13 @@
 
 torch
 torchdata
+numpy
+transformers
 torchmetrics
 numerize
-transformers
 datasets
 scikit-learn
 matplotlib
 dotted-dict
+tqdm
+pyyaml
