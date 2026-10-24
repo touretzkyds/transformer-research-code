@@ -27,12 +27,12 @@ VAL_LOSS = [
     1.58, 1.68, 1.80, 1.95, 2.10,
 ]
 VAL_BLEU = [
-    0.02, 0.06, 0.11, 0.18, 0.24, 0.31, 0.36, 0.40, 0.43, 0.45,
-    0.48, 0.50, 0.51, 0.52, 0.52,
+    2, 6, 11, 18, 24, 31, 36, 40, 43, 45,
+    48, 50, 51, 52, 52,
 ]
 TRAIN_BLEU = [
-    0.03, 0.09, 0.15, 0.23, 0.30, 0.38, 0.44, 0.49, 0.53, 0.56,
-    0.60, 0.63, 0.65, 0.66, 0.67,
+    3, 9, 15, 23, 30, 38, 44, 49, 53, 56,
+    60, 63, 65, 66, 67,
 ]
 
 # ── 2x6 grid config ───────────────────────────────────────────────────────
@@ -89,6 +89,12 @@ def find_raw_dir(n: int, size: str) -> Path:
     raise FileNotFoundError(f"No raw_values for N={n} size={size}")
 
 
+def as_bleu_percent(vals: np.ndarray) -> np.ndarray:
+    if len(vals) and vals.max() <= 1.0:
+        return vals * 100.0
+    return vals
+
+
 def load_run(n: int, size: str) -> dict:
     raw = find_raw_dir(n, size)
     train_loss = load_series_as_list(raw / "train_loss.txt")
@@ -102,8 +108,8 @@ def load_run(n: int, size: str) -> dict:
         "raw": raw,
         "train_loss": train_loss,
         "val_loss": val_loss,
-        "train_bleu": train_bleu,
-        "val_bleu": val_bleu,
+        "train_bleu": as_bleu_percent(train_bleu),
+        "val_bleu": as_bleu_percent(val_bleu),
         "n_epochs": n_epochs,
     }
 
@@ -142,7 +148,7 @@ def style_bleu_axis(ax):
     ax.tick_params(axis="y", colors=BLEU_COLOR, labelsize=7)
     ax.spines["right"].set_color(BLEU_COLOR)
     ax.spines["top"].set_visible(False)
-    ax.set_ylim(0, 1)
+    ax.set_ylim(0, 100)
 
 
 def plot_overlay_on_ax(
@@ -188,7 +194,7 @@ def plot_overlay_on_ax(
     ax_ep.tick_params(axis="x", labelsize=7)
     ax_ep.spines["top"].set_visible(True)
 
-    title = f"N: {run['n']} | Size: {run['size']} | Bs: 128 | Seed: 42"
+    title = f"N: {run['n']} | Size: {run['size']} | BS: 128 | Seed: 42"
     ax_loss.set_title(title, fontsize=8, pad=18)
 
     if show_legend:

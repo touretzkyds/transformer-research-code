@@ -124,11 +124,16 @@ class Translator:
             if not os.path.exists(save_path):
                 raise FileNotFoundError(f"Model file not found: {save_path}")
                 
-            self.model = torch.load(save_path)
-            
-            if isinstance(self.model, torch.nn.DataParallel):
-                print("Unwrapping DataParallel model")
-                self.model = self.model.module
+            ckpt = torch.load(save_path, map_location=self.device)
+            if isinstance(ckpt, dict) and "model" in ckpt:
+                from model.utils import create_model
+                self.model = create_model(self.config)
+                self.model.load_state_dict(ckpt["model"])
+            else:
+                self.model = ckpt
+                if isinstance(self.model, torch.nn.DataParallel):
+                    print("Unwrapping DataParallel model")
+                    self.model = self.model.module
             
             self.model.to(self.device)
             print(f"Successfully loaded model from {save_path}")
@@ -248,7 +253,7 @@ if __name__ == "__main__":
         # run translations  
         print("Starting translation...")
         bleu_score = translator.translate_dataset()
-        print(f"Translation completed. Average BLEU score: {bleu_score:.4f}")
+        print(f"Translation completed. Average BLEU score: {bleu_score:.2f}")
         
         # save translation results
         translator.logger.save_as_txt('artifacts/generated_translations/', 

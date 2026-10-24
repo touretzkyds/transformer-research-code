@@ -73,8 +73,7 @@ class BleuUtils:
     # which does seem to have similar already.
     def __init__(self, config, logger):
         self.config = config
-        self.max_padding_train = config.model.max_padding_train
-        self.max_padding_test = config.model.max_padding_test
+        self.max_padding = config.model.max_padding
         self.tokenizer_tgt = config.extras.tokenizer_tgt
         self.tokenizer_src = config.extras.tokenizer_src
         self.device = torch.device(config.hardware.device)
@@ -100,11 +99,10 @@ class BleuUtils:
         Evaluates the BLEU score of the model on one batch.
         """
         model.eval()
-        max_padding = self.max_padding_test if split_name == "test" else self.max_padding_train
         with torch.no_grad():
             # Prepare batch: shift targets to get tgt_label for decoding
             batch.shift_tgts()
-            predictions = greedy_decode(model, batch, max_padding, self.tokenizer_tgt)
+            predictions = greedy_decode(model, batch, self.max_padding, self.tokenizer_tgt)
             
             # Remove CLS token from predictions to match tgt_label format
             # predictions start with CLS, but tgt_label doesn't have CLS (it was removed in shift_tgts)
@@ -134,4 +132,4 @@ class BleuUtils:
     @staticmethod
     def compute_batch_bleu(predicted_sentences, actual_sentences):
         references = [[sentence] for sentence in actual_sentences]
-        return float(bleu_score(predicted_sentences, references))
+        return float(bleu_score(predicted_sentences, references)) * 100.0

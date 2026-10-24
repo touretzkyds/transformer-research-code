@@ -2,6 +2,7 @@ import torch
 import os
 import os.path as op
 import json
+import numpy as np
 from datasets import load_dataset # huggingface datasets
 from datasets import Dataset, DatasetDict, Features
 from transformers import AutoTokenizer
@@ -65,13 +66,11 @@ class DataSource:
         self.config = config
         self.name = config.dataset.name
         self.language_pair = config.dataset.language_pair
-        self.cache = config.dataset.cache
         self.dataset_size = config.dataset.size
-        self.max_padding_train = config.model.max_padding_train
-        self.max_padding_test = config.model.max_padding_test
         self.random_seed = config.training.random_seed
         self.size = config.dataset.size
-        self.test_size = config.dataset.test_size
+        self.split_seed = getattr(config.dataset, "split_seed", 42)
+        self.probe_size = getattr(config.dataset, "probe_size", 10000)
 
     def get_data(self):
         '''
@@ -82,18 +81,20 @@ class DataSource:
             dataset_dict = load_dataset("wmt14", "-".join(self.language_pair), num_proc=min(os.cpu_count()-1, 8))
             dataset_dict = self._random_sample(dataset_dict, self.size)
             dataset_dict = self._overwrite_test_wmt14(dataset_dict)
+            dataset_dict = self._sample_train_for_bleu(dataset_dict)
             # x = dataset_dict.flatten().map(custom_tokenize_src, batched=True, batch_size=10000, num_proc=8)
             # dataset_dict = load_from_disk("artifacts/saved_data/tokenized_data/wmt14_de_en")    
             # dataset_dict["train"] = dataset_dict["train"].select(range(30000))
         elif self.name == "wmt24":
             dataset_dict = load_dataset("neelpawar/wmt24-de-en", "curated_5m")
-            dataset_dict = self._random_sample(dataset_dict, self.size + self.test_size)
-            dataset_dict = self._overwrite_val_test_wmt24(dataset_dict)
+            dataset_dict = self._apply_wmt24_probes(dataset_dict)
         elif self.name == "m30k":
             dataset_dict = load_dataset("bentrevett/multi30k", num_proc=os.cpu_count()-1)
+            dataset_dict = self._sample_train_for_bleu(dataset_dict)
         elif self.name == "toy":
             dataset_dict = load_dataset("neelpawar/wmt24-de-en", "toy")
             dataset_dict = self._random_sample(dataset_dict, self.size)
+            dataset_dict = self._sample_train_for_bleu(dataset_dict)
         elif self.name == "txt":
             with open(self.dataset_path, 'r') as f:
                 file_text = f.readlines()
@@ -124,12 +125,40 @@ class DataSource:
         dataset_dict.save_to_disk("artifacts/saved_data/tokenized_data/wmt24_de_en")
         pass
 
+    def _apply_wmt24_probes(self, dataset_dict):
+        hub_train = dataset_dict["train"]
+        n = len(hub_train)
+        rng = np.random.RandomState(self.split_seed)
+        drawn = rng.choice(n, 2 * self.probe_size, replace=False)
+        val_idx = drawn[: self.probe_size].tolist()
+        toy_idx = drawn[self.probe_size :].tolist()
+        exclude = set(drawn.tolist())
+        leftover = np.array([i for i in range(n) if i not in exclude], dtype=np.int64)
+        rng.shuffle(leftover)
+        train_idx = leftover[: self.size].tolist()
+        dataset_dict["train_sampled"] = hub_train.select(toy_idx)
+        dataset_dict["test"] = dataset_dict["validation"]
+        dataset_dict["validation"] = hub_train.select(val_idx)
+        dataset_dict["train"] = hub_train.select(train_idx)
+        print(f"WMT24: held out val={len(dataset_dict['validation'])} train_sampled={len(dataset_dict['train_sampled'])} then sampled train={len(dataset_dict['train'])} from leftover={len(leftover)}")
+        return dataset_dict
+
+    def _sample_train_for_bleu(self, dataset_dict):
+        """
+        Pick probe_size training examples to measure train BLEU on each epoch.
+        Unlike wmt24, these overlap with the examples the model trains on.
+        """
+        n = len(dataset_dict["train"])
+        random.seed(self.random_seed)
+        dataset_dict["train_sampled"] = dataset_dict["train"].select(random.sample(range(n), min(self.probe_size, n)))
+        return dataset_dict
+
     def _overwrite_val_test_wmt24(self, dataset_dict):
         """
         Overwrite the validation set of wmt24 with the test set.
         test becomes old validation 
         """
-        new_split = dataset_dict['train'].train_test_split(test_size=self.test_size, seed=self.random_seed)
+        new_split = dataset_dict['train'].train_test_split(test_size=self.probe_size, seed=self.random_seed)
         dataset_dict['train'] = new_split['train']
         dataset_dict['test'] = dataset_dict['validation'] # wmt24test hand translated becomes test
         dataset_dict['validation'] = new_split['test']

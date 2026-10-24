@@ -1,3 +1,9 @@
+import sys
+import site
+_user_site = site.getusersitepackages()
+if _user_site in sys.path:
+    sys.path.remove(_user_site)
+
 import time
 import random
 import numpy as np
@@ -47,18 +53,17 @@ class Trainer:
         self.dataloaders = self.data_mgr.load_dataloaders()
         self.bleu_utils = BleuUtils(config, self.logger)
         self.device = resolve_device(config.hardware.device)
-        self.max_padding_test = config.model.max_padding_test
         self.accum_iter = config.training.accumulation_steps
-        self.save_frequency = 2
         self.num_train_batches = len(self.dataloaders['train'])
         self.num_val_batches = len(self.dataloaders['val'])
         self.num_test_batches = len(self.dataloaders['test'])
-        self.print_frequency = max(self.num_train_batches // 8, 1) # for printing progress
+        self.print_frequency = max(self.num_train_batches // 8, 1)
+        self.update_step = 0
 
     def train(self):
-        for epoch in range(1, self.config.training.epochs+1): # epochs are 1-indexed
+        run_t0 = time.time()
+        for epoch in range(1, self.config.training.epochs+1):
             print(f"Epoch: {epoch}")
-            # initialize timer
             start = time.time()
             # training
             train_loss, train_bleu = self.run_train_epoch(epoch)
@@ -67,22 +72,21 @@ class Trainer:
             # testing
             # test_loss, test_bleu = self.run_test_epoch(epoch)
             # accumulate loss history
-            self.logger.log_metric('val_loss', val_loss, epoch)
-            self.logger.log_metric('val_bleu', val_bleu, epoch)
+            self.logger.log_metric('val_loss', val_loss, self.update_step)
             # self.logger.log_metric('test_loss', test_loss, epoch)
             # self.logger.log_metric('test_bleu', test_bleu, epoch)
 
             # print losses
+            elapsed = time.time() - run_t0
             print(f"Epoch: {epoch} | "
-                  f"Training: Loss: {train_loss:.3f}, BLEU: {train_bleu:.9f} | "
-                  f"Validation: Loss: {val_loss:.3f}, BLEU: {val_bleu:.9f} | "
-                #   f"Testing: Loss: {test_loss:.3f}, BLEU: {test_bleu:.9f} | "
-                  f"Time taken: {1/60*(time.time() - start):.2f} min")
+                  f"Training: Loss: {train_loss:.3f}, BLEU: {train_bleu:.2f} | "
+                  f"Validation: Loss: {val_loss:.3f}, BLEU: {val_bleu:.2f} | "
+                  f"Time taken: {(time.time() - start)/60:.2f} min | "
+                  f"Total: {elapsed/60:.2f} min")
             print("="*100)
 
-            # save model
-            if epoch % self.save_frequency == 0:
-                self.logger.save_model(self.model, epoch)
+            self.logger.save_model(self.model, epoch)
+            self.logger.log_run_time(elapsed)
 
             # plot and save loss curves
             # log loss v/s weight updates
@@ -98,11 +102,15 @@ class Trainer:
                             plot_type='bleu', 
                             xlabel='Weight Updates',
                             )
-        print("Training complete")
+        elapsed = time.time() - run_t0
+        self.logger.log_run_time(elapsed)
+        print(f"Training complete | Total time: {elapsed/3600:.2f} h ({elapsed/60:.1f} min)")
 
     def run_train_epoch(self, epoch):
         self.model.train()
         epoch_loss = 0
+        window_loss = 0.0
+        window_count = 0
         for i, batch in enumerate(self.dataloaders['train']):
             batch.prepare_for_training()
             output_logprobabilities = self.model.forward(batch.src_tokens.to(self.device), 
@@ -112,12 +120,16 @@ class Trainer:
             loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.device), batch.ntokens)
             # backpropagate and apply optimizer-based gradient descent 
             loss.backward()
+            window_loss += loss.item()
+            window_count += 1
             
             if i % self.accum_iter == 0:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
-                # log train loss after every weight update
-                self.logger.log_metric("train_loss", loss.item(), i // self.accum_iter)
+                self.update_step += 1
+                self.logger.log_metric("train_loss", window_loss / window_count, self.update_step)
+                window_loss = 0.0
+                window_count = 0
             
             # step learning rate (every batch, not just when optimizer steps)
             self.scheduler.step()
@@ -139,7 +151,7 @@ class Trainer:
         epoch_loss /= self.num_train_batches
         # evaluate BLEU score on random batches for computational efficiency
         bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['train_toy'], epoch, "train")
-        self.logger.log_metric("train_bleu", bleu, epoch)
+        self.logger.log_metric("train_bleu", bleu, self.update_step)
         return epoch_loss, bleu
 
     def run_val_epoch(self, epoch):
@@ -165,7 +177,7 @@ class Trainer:
         # average the metrics
         epoch_loss /= self.num_val_batches
         bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['val'], epoch, "val")
-        self.logger.log_metric("val_bleu", bleu, epoch)
+        self.logger.log_metric("val_bleu", bleu, self.update_step)
         return epoch_loss, bleu
 
     def run_test_epoch(self, epoch):
@@ -191,7 +203,7 @@ class Trainer:
         # average the metrics
         epoch_loss /= self.num_test_batches
         bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['test'], epoch, "test")
-        self.logger.log_metric("test_bleu", bleu, epoch)
+        self.logger.log_metric("test_bleu", bleu, self.update_step)
         return epoch_loss, bleu
     
 if __name__ == "__main__":
@@ -201,9 +213,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_layers", type=int, default=config.model.n_layers)
     parser.add_argument("--language_pair", type=tuple, default=config.dataset.language_pair)
     parser.add_argument("--batch_size", type=int, default=config.training.batch_size)
-    parser.add_argument("--max_padding_train", type=int, default=config.model.max_padding_train)
+    parser.add_argument("--max_padding", type=int, default=config.model.max_padding)
     parser.add_argument("--dataset_name", type=str, choices=["wmt14", "wmt24", "m30k", "toy", "txt"], default=config.dataset.name)
-    parser.add_argument("--cache", action="store_true")
     parser.add_argument("--dataset_size", type=int, default=config.dataset.size)
     parser.add_argument("--random_seed", type=int, default=config.training.random_seed)
     parser.add_argument("--device", type=str, choices=["cuda", "cpu", "mps"], default=config.hardware.device)
