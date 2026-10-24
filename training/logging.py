@@ -11,12 +11,12 @@ class BaseLogger:
     def __init__(self, config):
         self.config = config
         self.title_dict = {
-            "N layers": config.model.n_layers,
-            "Name": config.dataset.name,
+            "Layers": config.model.n_layers,
+            "Dataset": config.dataset.name,
             "Size": nu(config.dataset.size),
             "BS": config.training.batch_size,
             "Seed": config.training.random_seed,
-            "Seq": config.model.max_padding,
+            "Seq len": config.model.max_padding,
         }
         self.run_path = os.path.join(*[f"{k.replace(' ', '_').lower()}_{v}" for k, v in self.title_dict.items()])
 
@@ -48,32 +48,31 @@ class TrainingLogger(BaseLogger):
         with open(os.path.join(self.raw_values_save_dir, f"{name}.txt"), "a") as f:
             f.write(f"{step}: {value}\n")
 
-    def save_model(self, model, epoch):
+    def save_model(self, model, step):
         state = model.module if hasattr(model, "module") else model
-        torch.save({"epoch": epoch, "model": state.state_dict()}, os.path.join(self.model_save_dir, f"epoch_{epoch:02d}.pt"))
+        torch.save({"update_step": step, "model": state.state_dict()}, os.path.join(self.model_save_dir, f"update_{step:06d}.pt"))
 
     def log_run_time(self, seconds):
         with open(os.path.join(self.experiment_save_dir, "run_time.txt"), "w") as f:
             f.write(f"{seconds:.1f} s ({seconds / 3600:.2f} h)\n")
 
-    def save_translation(self, src_sentences, tgt_sentences, pred_sentences, pred_tokens, bleu_score, epoch, split_name):
+    def save_translation(self, src_sentences, tgt_sentences, pred_sentences, pred_tokens, bleu_score, step, split_name):
         save_path = os.path.join(self.translation_save_dir, f"{split_name}_translations.txt")
         print(f"Saving translations to {save_path}")
         with open(save_path, "a") as f:
             f.write("="*100 + "\n")
-            f.write(f"Epoch: {epoch} \t|\t BLEU: {bleu_score:.2f}\n")
+            f.write(f"Update: {step} \t|\t BLEU: {bleu_score:.2f}\n")
             f.write("="*100 + "\n")
             for src, tgt, pred, pred_tok in zip(src_sentences, tgt_sentences, pred_sentences, pred_tokens):
                 f.write(f"Source: {src}\nTarget: {tgt}\nPredicted: {pred}\nPredicted Tokens: {pred_tok}\n")
                 f.write("-"*100 + "\n\n")
 
-    def saveplot(self, epoch_num, metric_names, title, plot_type, xlabel="Weight Updates"):
+    def saveplot(self, updates_per_epoch, metric_names, title, plot_type, xlabel="Weight Updates"):
         '''
         Plots metrics against weight updates, with epochs on a secondary x-axis.
-        Loss starts at update 0 (epoch 0); BLEU starts at its first evaluation (epoch 1).
+        Loss starts at update 0; BLEU starts at its first evaluation.
         '''
         ylim = {"loss": (0, 9), "bleu": (0, 100)}[plot_type]
-        first_epoch = 0 if plot_type == "loss" else 1
         first_step = 0 if plot_type == "loss" else self.metrics[metric_names[0]][0][0]
         last_step = max(self.metrics[name][-1][0] for name in metric_names)
 
@@ -91,7 +90,7 @@ class TrainingLogger(BaseLogger):
         ax.legend()
 
         ax2 = ax.twiny()
-        ax2.set_xlim(first_epoch, epoch_num)
+        ax2.set_xlim(first_step / updates_per_epoch, last_step / updates_per_epoch)
         ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax2.set_xlabel("Epoch")
 

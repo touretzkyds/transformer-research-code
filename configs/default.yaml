@@ -11,7 +11,8 @@ model:
 training:
   batch_size: 32
   shuffle: true
-  epochs: 20
+  max_updates: 24000
+  eval_every: 1000
   learning_rate:
     base: 1.0
     warmup_steps: 3000

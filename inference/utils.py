@@ -79,13 +79,13 @@ class BleuUtils:
         self.device = torch.device(config.hardware.device)
         self.logger = logger
         
-    def evaluate_bleu(self, model, dataloader, epoch, split_name):
+    def evaluate_bleu(self, model, dataloader, step, split_name):
         model.eval()
         with torch.no_grad():
             bleu_scores = []
             print(f"Evaluating BLEU on {split_name} set with {len(dataloader)} batches")
             for i, batch in enumerate(dataloader):
-                bleu = self.evaluate_bleu_one_batch(model, batch, save_translations=(i == 0), epoch=epoch, split_name=split_name) # save translations for first batch only
+                bleu = self.evaluate_bleu_one_batch(model, batch, save_translations=(i == 0), step=step, split_name=split_name) # save translations for first batch only
                 bleu_scores.append(bleu)
                 # Clean up batch and clear cache
                 del batch
@@ -94,7 +94,7 @@ class BleuUtils:
             average_bleu = sum(bleu_scores) / len(bleu_scores) if bleu_scores else 0.0
             return average_bleu
 
-    def evaluate_bleu_one_batch(self, model, batch, save_translations=False, epoch=None, split_name=None):
+    def evaluate_bleu_one_batch(self, model, batch, save_translations=False, step=None, split_name=None):
         """
         Evaluates the BLEU score of the model on one batch.
         """
@@ -121,7 +121,7 @@ class BleuUtils:
             
             if save_translations:
                 src_sentences = self.tokenizer_src.batch_decode(batch.src_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True) # only used for logging
-                self.logger.save_translation(src_sentences[:5], tgt_sentences[:5], predicted_sentences[:5], predictions_no_cls[:5], bleu, epoch=epoch, split_name=split_name)
+                self.logger.save_translation(src_sentences[:5], tgt_sentences[:5], predicted_sentences[:5], predictions_no_cls[:5], bleu, step=step, split_name=split_name)
                 
             # Clean up
             del predictions, predictions_no_cls

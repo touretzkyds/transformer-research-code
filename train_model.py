@@ -4,6 +4,7 @@ _user_site = site.getusersitepackages()
 if _user_site in sys.path:
     sys.path.remove(_user_site)
 
+import math
 import time
 import random
 import numpy as np
@@ -58,57 +59,49 @@ class Trainer:
         self.num_val_batches = len(self.dataloaders['val'])
         self.num_test_batches = len(self.dataloaders['test'])
         self.print_frequency = max(self.num_train_batches // 8, 1)
+        self.updates_per_epoch = math.ceil(self.num_train_batches / self.accum_iter)
+        self.max_updates = config.training.max_updates
+        self.eval_every = config.training.eval_every
         self.update_step = 0
 
     def train(self):
-        run_t0 = time.time()
-        for epoch in range(1, self.config.training.epochs+1):
+        # every dataset size trains for the same number of weight updates, so small sets loop over more epochs
+        self.run_t0 = time.time()
+        self.eval_t0 = time.time()
+        epoch = 0
+        while self.update_step < self.max_updates:
+            epoch += 1
             print(f"Epoch: {epoch}")
-            start = time.time()
-            # training
-            train_loss, train_bleu = self.run_train_epoch(epoch)
-            # validation
-            val_loss, val_bleu = self.run_val_epoch(epoch)
-            # testing
-            # test_loss, test_bleu = self.run_test_epoch(epoch)
-            # accumulate loss history
-            self.logger.log_metric('val_loss', val_loss, self.update_step)
-            # self.logger.log_metric('test_loss', test_loss, epoch)
-            # self.logger.log_metric('test_bleu', test_bleu, epoch)
-
-            # print losses
-            elapsed = time.time() - run_t0
-            print(f"Epoch: {epoch} | "
-                  f"Training: Loss: {train_loss:.3f}, BLEU: {train_bleu:.2f} | "
-                  f"Validation: Loss: {val_loss:.3f}, BLEU: {val_bleu:.2f} | "
-                  f"Time taken: {(time.time() - start)/60:.2f} min | "
-                  f"Total: {elapsed/60:.2f} min")
-            print("="*100)
-
-            self.logger.save_model(self.model, epoch)
-            self.logger.log_run_time(elapsed)
-
-            # plot and save loss curves
-            # log loss v/s weight updates
-            self.logger.saveplot(epoch, 
-                            metric_names=['train_loss', 'val_loss'], # 'test_loss'
-                            title='Loss', 
-                            plot_type='loss', 
-                            xlabel='Weight Updates',
-                            )
-            self.logger.saveplot(epoch,
-                            metric_names=['train_bleu', 'val_bleu'], # 'test_bleu'
-                            title='BLEU', 
-                            plot_type='bleu', 
-                            xlabel='Weight Updates',
-                            )
-        elapsed = time.time() - run_t0
+            self.run_train_epoch()
+        elapsed = time.time() - self.run_t0
         self.logger.log_run_time(elapsed)
         print(f"Training complete | Total time: {elapsed/3600:.2f} h ({elapsed/60:.1f} min)")
 
-    def run_train_epoch(self, epoch):
+    def evaluate(self):
+        train_bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['train_toy'], self.update_step, "train")
+        val_loss, val_bleu = self.run_val_epoch()
+        self.logger.log_metric("train_bleu", train_bleu, self.update_step)
+        self.logger.log_metric("val_loss", val_loss, self.update_step)
+        self.logger.log_metric("val_bleu", val_bleu, self.update_step)
+
+        elapsed = time.time() - self.run_t0
+        print(f"Update: {self.update_step}/{self.max_updates} | "
+              f"Epoch: {self.update_step / self.updates_per_epoch:.2f} | "
+              f"Train BLEU: {train_bleu:.2f} | "
+              f"Validation: Loss: {val_loss:.3f}, BLEU: {val_bleu:.2f} | "
+              f"Time since last eval: {(time.time() - self.eval_t0)/60:.2f} min | "
+              f"Total: {elapsed/60:.2f} min")
+        print("="*100)
+
+        self.logger.save_model(self.model, self.update_step)
+        self.logger.log_run_time(elapsed)
+        self.logger.saveplot(self.updates_per_epoch, metric_names=['train_loss', 'val_loss'], title='Loss', plot_type='loss')
+        self.logger.saveplot(self.updates_per_epoch, metric_names=['train_bleu', 'val_bleu'], title='BLEU', plot_type='bleu')
         self.model.train()
-        epoch_loss = 0
+        self.eval_t0 = time.time()
+
+    def run_train_epoch(self):
+        self.model.train()
         window_loss = 0.0
         window_count = 0
         for i, batch in enumerate(self.dataloaders['train']):
@@ -130,12 +123,11 @@ class Trainer:
                 self.logger.log_metric("train_loss", window_loss / window_count, self.update_step)
                 window_loss = 0.0
                 window_count = 0
+                if self.update_step % self.eval_every == 0:
+                    self.evaluate()
             
             # step learning rate (every batch, not just when optimizer steps)
             self.scheduler.step()
-            
-            # accumulate loss
-            epoch_loss += loss.detach().cpu().numpy()
             
             # print metrics
             if i % self.print_frequency == 0:
@@ -146,15 +138,10 @@ class Trainer:
             # Clean up intermediate tensors
             del output_logprobabilities, loss
             batch.offload()
-        
-        # average the metrics
-        epoch_loss /= self.num_train_batches
-        # evaluate BLEU score on random batches for computational efficiency
-        bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['train_toy'], epoch, "train")
-        self.logger.log_metric("train_bleu", bleu, self.update_step)
-        return epoch_loss, bleu
+            if self.update_step == self.max_updates:
+                break
 
-    def run_val_epoch(self, epoch):
+    def run_val_epoch(self):
         self.model.eval()
         epoch_loss = 0
         with torch.no_grad():
@@ -176,8 +163,7 @@ class Trainer:
                     torch.cuda.empty_cache()
         # average the metrics
         epoch_loss /= self.num_val_batches
-        bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['val'], epoch, "val")
-        self.logger.log_metric("val_bleu", bleu, self.update_step)
+        bleu = self.bleu_utils.evaluate_bleu(self.model, self.dataloaders['val'], self.update_step, "val")
         return epoch_loss, bleu
 
     def run_test_epoch(self, epoch):
@@ -209,7 +195,8 @@ class Trainer:
 if __name__ == "__main__":
     config = Config("configs/default.yaml")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=config.training.epochs)
+    parser.add_argument("--max_updates", type=int, default=config.training.max_updates)
+    parser.add_argument("--eval_every", type=int, default=config.training.eval_every)
     parser.add_argument("--n_layers", type=int, default=config.model.n_layers)
     parser.add_argument("--language_pair", type=tuple, default=config.dataset.language_pair)
     parser.add_argument("--batch_size", type=int, default=config.training.batch_size)
