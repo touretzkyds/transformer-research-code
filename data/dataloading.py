@@ -1,6 +1,8 @@
 import os
 import torch
+from functools import partial
 from data.sources import DataSource
+from data.sampler import MAX_TOKENS_PER_SENTENCE, TokenBudgetBatchSampler, token_lengths
 from torch.utils.data import DataLoader
 from utils.config import Config
 
@@ -13,9 +15,14 @@ class DataManager:
     def load_dataloaders(self):
         data_source = DataSource(self.config)
         dataset_dict = data_source.get_data()
-        shuffle_generator = torch.Generator()
-        shuffle_generator.manual_seed(self.config.training.random_seed)
-        train_dataloader = DataLoader(dataset_dict['train'], batch_size=self.config.training.batch_size, shuffle=self.config.training.shuffle, collate_fn=self.collate_fn, generator=shuffle_generator)
+        if self.config.training.dynamic_batching:
+            lengths = token_lengths(dataset_dict['train'], self.tokenizer_src, self.tokenizer_tgt, self.config.dataset.language_pair)
+            batch_sampler = TokenBudgetBatchSampler(lengths, self.config.training.random_seed)
+            train_dataloader = DataLoader(dataset_dict['train'], batch_sampler=batch_sampler, collate_fn=partial(self.collate_fn, max_length=MAX_TOKENS_PER_SENTENCE))
+        else:
+            shuffle_generator = torch.Generator()
+            shuffle_generator.manual_seed(self.config.training.random_seed)
+            train_dataloader = DataLoader(dataset_dict['train'], batch_size=self.config.training.batch_size, shuffle=self.config.training.shuffle, collate_fn=self.collate_fn, generator=shuffle_generator)
         train_toy_dataloader = DataLoader(dataset_dict['train_sampled'], batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.collate_fn)
         val_dataloader = DataLoader(dataset_dict['validation'], batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.collate_fn)
         test_dataloader = DataLoader(dataset_dict['test'], batch_size=self.config.training.batch_size, shuffle=False, collate_fn=self.collate_fn)
@@ -26,8 +33,8 @@ class DataManager:
             'test': test_dataloader
         }
 
-    def collate_fn(self, sentence_pairs):
-        max_length = self.config.model.max_padding
+    def collate_fn(self, sentence_pairs, max_length=None):
+        max_length = max_length or self.config.model.max_padding
         tokenizer_src_outputs = self.tokenizer_src([sentence_pair["translation"][self.config.dataset.language_pair[0]] for sentence_pair in sentence_pairs], return_tensors="pt", padding=True, truncation=True, max_length=max_length)
         tokenizer_tgt_outputs = self.tokenizer_tgt([sentence_pair["translation"][self.config.dataset.language_pair[1]] for sentence_pair in sentence_pairs], return_tensors="pt", padding=True, truncation=True, max_length=max_length)
         return Batch(tokenizer_src_outputs, tokenizer_tgt_outputs, self.tokenizer_tgt.pad_token_id)

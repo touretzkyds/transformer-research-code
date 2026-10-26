@@ -10,13 +10,14 @@ from numerize.numerize import numerize as nu
 class BaseLogger:
     def __init__(self, config):
         self.config = config
+        dynamic = config.training.dynamic_batching
         self.title_dict = {
             "Layers": config.model.n_layers,
             "Dataset": config.dataset.name,
             "Size": nu(config.dataset.size),
-            "BS": config.training.batch_size,
+            "BS": "dynamic" if dynamic else config.training.batch_size,
             "Seed": config.training.random_seed,
-            "Seq len": config.model.max_padding,
+            "Seq len": "dynamic" if dynamic else config.model.max_padding,
         }
         self.run_path = os.path.join(*[f"{k.replace(' ', '_').lower()}_{v}" for k, v in self.title_dict.items()])
 

@@ -58,5 +58,6 @@ class Config(DottedDict):
             'dataset_size': 'dataset.size',
             'max_padding': 'model.max_padding',
             'random_seed': 'training.random_seed',
+            'dynamic_batching': 'training.dynamic_batching',
             'device': 'hardware.device',
         }

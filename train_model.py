@@ -208,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_size", type=int, default=config.dataset.size)
     parser.add_argument("--random_seed", type=int, default=config.training.random_seed)
     parser.add_argument("--device", type=str, choices=["cuda", "cpu", "mps"], default=config.hardware.device)
+    parser.add_argument("--dynamic_batching", action="store_true", default=config.training.dynamic_batching)
     
     args = parser.parse_args()
     config.update_from_args(args)

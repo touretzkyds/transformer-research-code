@@ -11,6 +11,7 @@ model:
 training:
   batch_size: 32
   shuffle: true
+  dynamic_batching: false
   max_updates: 24000
   eval_every: 1000
   learning_rate:
