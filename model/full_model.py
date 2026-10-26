@@ -216,7 +216,7 @@ class EncoderLayer(nn.Module):
     def __init__(self, h, d_model, d_k, d_v, d_ff, dropout_prob):
         super(EncoderLayer , self).__init__()
         # Initialize self attention network
-        self_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
+        self_attn_module = MultiHeadAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         # Create self attention sublayer:
         #   Wrap the self attention module in a Sublayer.
         #   This Sublayer likely handles residual connections and normalization.
@@ -252,7 +252,7 @@ class DecoderLayer(nn.Module):
         #   Create a closure referencing a self attention layer. TODO: update this doc
         #   The self attention module of the decoder layer uses a mask
         #   to prevent positions from attending to subsequent positions.
-        self_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
+        self_attn_module = MultiHeadAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         self.self_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=self_attn_module,
                                            d_model=d_model, 
@@ -262,7 +262,7 @@ class DecoderLayer(nn.Module):
         #   Create a closure referencing a cross attention layer.
         #   "memory" indicates that decoder layer operates on the output embedding from the
         #   encoder stack as explained in section 3.2.3 of the paper.
-        cross_attn_module = MultiHeadedAttentionModule(h, d_model, d_k, d_v, dropout_prob)
+        cross_attn_module = MultiHeadAttentionModule(h, d_model, d_k, d_v, dropout_prob)
         self.cross_attn_sublayer = Sublayer(sublayer_type="attention", 
                                            workhorse=cross_attn_module,
                                            d_model=d_model, 
@@ -290,9 +290,9 @@ class DecoderLayer(nn.Module):
         return ff_sublayer_output
 
 
-class MultiHeadedAttentionModule(nn.Module):
+class MultiHeadAttentionModule(nn.Module):
     """
-    Generates a multiheaded attention network, which is 3 feedforward networks,
+    Generates a multihead attention network, which is 3 feedforward networks,
     for linear transformation on the query, key and value. These linearly 
     transformed vectors are then passed to the attention function which 
     performs scaled dot product attention on the vectors, returning the
@@ -309,7 +309,7 @@ class MultiHeadedAttentionModule(nn.Module):
         self.w_k = nn.Linear(d_model, h * d_k)
         self.w_v = nn.Linear(d_model, h * d_v)
         self.dropout_layer = nn.Dropout(p=dropout_prob)
-        self.linear_layer = nn.Linear(h * d_v, d_model)
+        self.w_o = nn.Linear(h * d_v, d_model)
 
     def forward(self, query, key, value, attention_mask=None):
         # The attention mask is not used in the encoder, and hence is only
@@ -339,7 +339,7 @@ class MultiHeadedAttentionModule(nn.Module):
         concatenated_attention_outputs = \
             attention_outputs.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_v)
         # pass through final linear layer
-        result = self.linear_layer(concatenated_attention_outputs)
+        result = self.w_o(concatenated_attention_outputs)
         del query, key, value, derived_queries, derived_keys, derived_values
         return result
     
