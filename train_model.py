@@ -108,6 +108,7 @@ class Trainer:
             batch.prepare_for_training()
             output_logprobabilities = self.model.forward(batch.src_tokens.to(self.device), 
                                                 batch.tgt_shifted_right.to(self.device),
+                                                batch.src_mask.to(self.device),
                                                 batch.decoder_attention_mask.to(self.device))
             # compute loss and BLEU score
             loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.device), batch.ntokens)
@@ -149,6 +150,7 @@ class Trainer:
                 batch.prepare_for_training()
                 output_logprobabilities = self.model.forward(batch.src_tokens.to(self.device), 
                                                             batch.tgt_shifted_right.to(self.device),
+                                                            batch.src_mask.to(self.device),
                                                             batch.decoder_attention_mask.to(self.device))
                 # compute loss
                 loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.device), batch.ntokens)
@@ -174,6 +176,7 @@ class Trainer:
                 batch.prepare_for_training()
                 output_logprobabilities = self.model.forward(batch.src_tokens.to(self.device), 
                                                             batch.tgt_shifted_right.to(self.device),
+                                                            batch.src_mask.to(self.device),
                                                             batch.decoder_attention_mask.to(self.device))
                 # compute loss
                 loss = self.criterion(output_logprobabilities, batch.tgt_label.to(self.device), batch.ntokens)

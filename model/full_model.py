@@ -39,27 +39,27 @@ class TransformerModel(nn.Module, PyTorchModelHubMixin):
             if p.dim() > 1: # presumably biases skipped TODO: verify this
                 nn.init.xavier_uniform_(p)
         
-    def encode(self, src):
+    def encode(self, src, src_mask):
         # convert source tokens to embeddings and add positional encoding
         src_embeddings = self.input_embedding_layer(src)
         src_embeddings_with_positions = self.input_positional_enc_layer(src_embeddings)
         # encode
-        encoder_stack_output = self.encoder_stack(src_embeddings_with_positions)
+        encoder_stack_output = self.encoder_stack(src_embeddings_with_positions, src_mask)
         return encoder_stack_output
 
-    def decode(self, tgt, memory, decoder_attn_mask):
+    def decode(self, tgt, memory, src_mask, decoder_attn_mask):
         # convert target tokens to embeddings and add positional encoding
         tgt_embeddings = self.output_embedding_layer(tgt)
         tgt_embeddings_with_positions = self.output_positional_enc_layer(tgt_embeddings)
         # decode
-        decoder_stack_output = self.decoder_stack(tgt_embeddings_with_positions, memory, decoder_attn_mask)
+        decoder_stack_output = self.decoder_stack(tgt_embeddings_with_positions, memory, src_mask, decoder_attn_mask)
         return decoder_stack_output
 
-    def forward(self, src, tgt, decoder_attn_mask):
+    def forward(self, src, tgt, src_mask, decoder_attn_mask):
         # pass source tokens through encoder
-        encoder_stack_output = self.encode(src)
+        encoder_stack_output = self.encode(src, src_mask)
         # pass target tokens and encoder output through decoder
-        decoder_stack_output = self.decode(tgt, encoder_stack_output, decoder_attn_mask)
+        decoder_stack_output = self.decode(tgt, encoder_stack_output, src_mask, decoder_attn_mask)
         # project decoder output to transformer output vocabulary size
         output_logprobabilities = self.linear_and_softmax_layers(decoder_stack_output)
         return output_logprobabilities
@@ -113,12 +113,12 @@ class EncoderStack(nn.Module):
         # layer normalization
         self.norm_layer = LayerNorm(d_model)
 
-    def forward(self, x):
+    def forward(self, x, src_mask):
         "Pass the input through each layer in turn."
         layer_input = x
         for layer in self.encoder_layers:
             # compute layer output
-            layer_output = layer(layer_input)
+            layer_output = layer(layer_input, src_mask)
             # this becomes input to next layer
             layer_input = layer_output
         normed_output = self.norm_layer(layer_output)
@@ -140,11 +140,11 @@ class DecoderStack(nn.Module):
         # layer normalization
         self.norm_layer = LayerNorm(d_model)
 
-    def forward(self, x, memory, decoder_attn_mask):
+    def forward(self, x, memory, src_mask, decoder_attn_mask):
         layer_input = x
         for layer in self.decoder_layers:
             # compute layer output
-            layer_output = layer(layer_input, memory, decoder_attn_mask)
+            layer_output = layer(layer_input, memory, src_mask, decoder_attn_mask)
             # this becomes input to next layer
             layer_input = layer_output
         normed_output = self.norm_layer(layer_output)
@@ -177,7 +177,8 @@ class Sublayer(nn.Module):
             else: # cross attention
                 workhorse_output = self.workhorse(query = normed_x, 
                                                   key = memory, 
-                                                  value = memory)
+                                                  value = memory,
+                                                  attention_mask = mask)
         elif self.sublayer_type == "feedforward":
             # positionwise feedforward
             workhorse_output = self.workhorse(normed_x)
@@ -232,8 +233,8 @@ class EncoderLayer(nn.Module):
                                         d_model=d_model, 
                                         dropout_prob=dropout_prob)
 
-    def forward(self, x):
-        self_attn_sublayer_output = self.self_attn_sublayer(x)
+    def forward(self, x, src_mask):
+        self_attn_sublayer_output = self.self_attn_sublayer(x, mask = src_mask)
         ff_sublayer_output = self.ff_sublayer(self_attn_sublayer_output)
         return ff_sublayer_output
 
@@ -276,13 +277,14 @@ class DecoderLayer(nn.Module):
                                         dropout_prob=dropout_prob)
 
 
-    def forward(self, x, memory, decoder_attn_mask):
+    def forward(self, x, memory, src_mask, decoder_attn_mask):
         "Follow Figure 1 (right) for connections."
         # self attention
         self_attn_sublayer_output = self.self_attn_sublayer(x, 
                                                             mask = decoder_attn_mask)
         # cross attention
         cross_attn_sublayer_output = self.cross_attn_sublayer(self_attn_sublayer_output, 
+                                                             mask = src_mask,
                                                              memory = memory)
         # feedforward network
         ff_sublayer_output = self.ff_sublayer(x = cross_attn_sublayer_output)
@@ -311,13 +313,10 @@ class MultiHeadAttentionModule(nn.Module):
         self.dropout_layer = nn.Dropout(p=dropout_prob)
         self.w_o = nn.Linear(h * d_v, d_model)
 
-    def forward(self, query, key, value, attention_mask=None):
-        # The attention mask is not used in the encoder, and hence is only
-        # assigned a null value for the encoder
-        if attention_mask is not None:
-            attention_mask_tensor = attention_mask.unsqueeze(1)
-        else:
-            attention_mask_tensor = None
+    def forward(self, query, key, value, attention_mask):
+        # Broadcast the mask over attention heads. Source padding masks are
+        # (batch, 1, src_len) and also broadcast over query positions.
+        attention_mask_tensor = attention_mask.unsqueeze(1)
         batch_size = query.size(0)
         partition_across_attn_heads = lambda x, d_qkv : x.view(batch_size, -1, self.h, d_qkv).transpose(1, 2)
         # The w_q, w_k, w_v matrices compute the size d_k derived
@@ -343,8 +342,7 @@ class MultiHeadAttentionModule(nn.Module):
         del query, key, value, derived_queries, derived_keys, derived_values
         return result
     
-    def attention_fn(self, derived_queries, derived_keys, derived_values, 
-                     mask=None):
+    def attention_fn(self, derived_queries, derived_keys, derived_values, mask):
         '''
         Compute scaled dot product attention based on equation (1) under 
         section 3.2.1 of the paper: Attention(Q, K, V) = Softmax(QK^T / √dk)V. 
@@ -352,7 +350,7 @@ class MultiHeadAttentionModule(nn.Module):
         Steps:
             1. Compute alignment scores, ie. dot product QK^T
             2. Scale by square root of key size
-            3. Optionally apply masking if computing attention within the decoder
+            3. Apply masking: padding positions, and future positions in the decoder
             4. Apply softmax to get an attention matrix of weightings
             5. Apply dropout for regularization 
             6. Multiply attention matrix with values to get resulting attention outputs
@@ -360,8 +358,7 @@ class MultiHeadAttentionModule(nn.Module):
         # equation (1) of paper
         derived_keys_transpose = derived_keys.transpose(-2, -1)
         scores = torch.matmul(derived_queries, derived_keys_transpose) / math.sqrt(self.d_k)
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, -1e9)
         attention_weightings = scores.softmax(dim=-1)
         # apply dropout
         attention_weightings = self.dropout_layer(attention_weightings)

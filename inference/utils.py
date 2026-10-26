@@ -13,6 +13,7 @@ def greedy_decode(model, batch, max_padding, tokenizer_tgt):
     
     # Move source tokens to device once
     src_tokens = batch.src_tokens.to(device)
+    src_mask = batch.src_mask.to(device)
     batch_size = src_tokens.shape[0]
     pad_token_id = batch.pad_token_id
     sep_token_id = tokenizer_tgt.sep_token_id if hasattr(tokenizer_tgt, 'sep_token_id') and tokenizer_tgt.sep_token_id is not None else None
@@ -23,7 +24,7 @@ def greedy_decode(model, batch, max_padding, tokenizer_tgt):
     model.eval()
     with torch.no_grad():
         # Encode source tokens once (reuse across iterations)
-        encoder_output = actual_model.encode(src_tokens)
+        encoder_output = actual_model.encode(src_tokens, src_mask)
         
         # pbar = tqdm(range(max_padding - 1), leave=False, desc="Decoding")
         for i in range(max_padding - 1):
@@ -32,7 +33,7 @@ def greedy_decode(model, batch, max_padding, tokenizer_tgt):
             decoder_attn_mask = batch.decoder_attention_mask.to(device)
             
             # Forward pass - decode using pre-computed encoder output
-            decoder_output = actual_model.decode(predictions_with_bos, encoder_output, decoder_attn_mask)
+            decoder_output = actual_model.decode(predictions_with_bos, encoder_output, src_mask, decoder_attn_mask)
             output_logprobabilities = actual_model.linear_and_softmax_layers(decoder_output)
             
             # Verify output shape: should be (batch_size, seq_len, vocab_size)
@@ -62,7 +63,7 @@ def greedy_decode(model, batch, max_padding, tokenizer_tgt):
     # Move final predictions to CPU before returning
     result = predictions_with_bos.cpu()
     
-    del predictions_with_bos, src_tokens
+    del predictions_with_bos, src_tokens, src_mask
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return result

@@ -38,6 +38,7 @@ class Batch:
     """
     def __init__(self, tokenizer_src_outputs, tokenizer_tgt_outputs, pad_token_id):
         self.src_tokens = tokenizer_src_outputs.input_ids
+        self.src_mask = tokenizer_src_outputs.attention_mask.unsqueeze(-2) # (batch, 1, src_len): 0 at padding
         self.tgt_tokens = tokenizer_tgt_outputs.input_ids
         self.ntokens = tokenizer_tgt_outputs.attention_mask.sum()
         self.pad_token_id = pad_token_id
@@ -57,12 +58,14 @@ class Batch:
 
     def to(self, device):
         self.src_tokens = self.src_tokens.to(device)
+        self.src_mask = self.src_mask.to(device)
         self.tgt_shifted_right = self.tgt_shifted_right.to(device)
         self.tgt_label = self.tgt_label.to(device)
         self.decoder_attention_mask = self.decoder_attention_mask.to(device)
 
     def offload(self):
         self.src_tokens = self.src_tokens.cpu()
+        self.src_mask = self.src_mask.cpu()
         self.tgt_tokens = self.tgt_tokens.cpu()
         self.tgt_shifted_right = self.tgt_shifted_right.cpu()
         self.tgt_label = self.tgt_label.cpu()
