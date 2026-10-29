@@ -129,24 +129,21 @@ class DataSource:
         hub_train = dataset_dict["train"]
         n = len(hub_train)
         rng = np.random.RandomState(self.split_seed)
-        drawn = rng.choice(n, 2 * self.probe_size, replace=False)
-        val_idx = drawn[: self.probe_size].tolist()
-        toy_idx = drawn[self.probe_size :].tolist()
-        exclude = set(drawn.tolist())
+        val_idx = rng.choice(n, self.probe_size, replace=False).tolist()
+        exclude = set(val_idx)
         leftover = np.array([i for i in range(n) if i not in exclude], dtype=np.int64)
         rng.shuffle(leftover)
         train_idx = leftover[: self.size].tolist()
-        dataset_dict["train_sampled"] = hub_train.select(toy_idx)
         dataset_dict["test"] = dataset_dict["validation"]
         dataset_dict["validation"] = hub_train.select(val_idx)
         dataset_dict["train"] = hub_train.select(train_idx)
-        print(f"WMT24: held out val={len(dataset_dict['validation'])} train_sampled={len(dataset_dict['train_sampled'])} then sampled train={len(dataset_dict['train'])} from leftover={len(leftover)}")
-        return dataset_dict
+        print(f"WMT24: held out val={len(dataset_dict['validation'])} then sampled train={len(dataset_dict['train'])} from leftover={len(leftover)}")
+        return self._sample_train_for_bleu(dataset_dict)
 
     def _sample_train_for_bleu(self, dataset_dict):
         """
-        Pick probe_size training examples to measure train BLEU on each epoch.
-        Unlike wmt24, these overlap with the examples the model trains on.
+        Pick probe_size examples from the training set to measure train BLEU.
+        These overlap with the examples the model trains on.
         """
         n = len(dataset_dict["train"])
         random.seed(self.random_seed)
